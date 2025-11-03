@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, StackingClassifier
 from sklearn.metrics import (
     confusion_matrix,
     f1_score,
@@ -19,6 +20,7 @@ from sklearn.metrics import (
     roc_auc_score,
     ConfusionMatrixDisplay,
 )
+from xgboost import XGBClassifier
 import time
 
 # Thư viện RSS Feed
@@ -1140,21 +1142,54 @@ if missing:
     st.stop()
 
 
-# Train model (GIỮ NGUYÊN)
+# ================================================================================================
+# NÂNG CẤP MÔ HÌNH: Từ Logistic đơn lẻ lên StackingClassifier với 3 base models
+# ================================================================================================
 X = df[MODEL_COLS] # Chỉ lấy các cột X_1..X_14
 y = df['default'].astype(int)
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
-model = LogisticRegression(random_state=42, max_iter=1000, class_weight="balanced", solver="lbfgs")
+
+# Định nghĩa 3 Base Models
+model_logistic = LogisticRegression(random_state=42, max_iter=1000, class_weight="balanced", solver="lbfgs")
+model_rf = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=10, class_weight="balanced")
+model_xgb = XGBClassifier(n_estimators=100, random_state=42, max_depth=6, learning_rate=0.1,
+                          use_label_encoder=False, eval_metric='logloss')
+
+# Tạo StackingClassifier với LogisticRegression làm meta-model
+estimators = [
+    ('logistic', model_logistic),
+    ('random_forest', model_rf),
+    ('xgboost', model_xgb)
+]
+model = StackingClassifier(
+    estimators=estimators,
+    final_estimator=LogisticRegression(random_state=42, max_iter=1000),
+    cv=5,  # Cross-validation 5-fold
+    stack_method='predict_proba',  # Dùng probability để stack
+    n_jobs=-1  # Sử dụng tất cả CPU cores
+)
+
+# Train tất cả models
 model.fit(X_train, y_train)
 
-# Dự báo & đánh giá (GIỮ NGUYÊN)
+# Dự báo & đánh giá cho Stacking Model (Model chính)
 y_pred_in = model.predict(X_train)
 y_proba_in = model.predict_proba(X_train)[:, 1]
 y_pred_out = model.predict(X_test)
 y_proba_out = model.predict_proba(X_test)[:, 1]
+
+# Train riêng 3 base models để lấy PD riêng biệt (để hiển thị)
+model_logistic.fit(X_train, y_train)
+model_rf.fit(X_train, y_train)
+model_xgb.fit(X_train, y_train)
+
+# Tính PD từ 3 base models trên test set
+y_proba_logistic_out = model_logistic.predict_proba(X_test)[:, 1]
+y_proba_rf_out = model_rf.predict_proba(X_test)[:, 1]
+y_proba_xgb_out = model_xgb.predict_proba(X_test)[:, 1]
 
 metrics_in = {
     "accuracy_in": accuracy_score(y_train, y_pred_in),
@@ -1175,10 +1210,16 @@ metrics_out = {
 
 with tab_goal:
     st.header("🎯 Mục tiêu của Mô hình")
-    st.markdown("**Dự báo xác suất vỡ nợ (PD) của khách hàng doanh nghiệp** dựa trên bộ chỉ số $\text{X1}–\text{X14}$ (tính từ Bảng Cân đối Kế toán, Báo cáo Kết quả Kinh doanh và Báo cáo Lưu chuyển Tiền tệ).")
-    
+    st.markdown("""
+    **Dự báo xác suất vỡ nợ (PD) của khách hàng doanh nghiệp** dựa trên bộ chỉ số $\\text{X1}–\\text{X14}$
+    (tính từ Bảng Cân đối Kế toán, Báo cáo Kết quả Kinh doanh và Báo cáo Lưu chuyển Tiền tệ).
+
+    **Mô hình Nâng cấp**: Sử dụng **Stacking Classifier** với 3 base models (Logistic + RandomForest + XGBoost)
+    để đạt độ chính xác cao hơn và khả năng giải thích tốt hơn so với mô hình đơn lẻ.
+    """)
+
     with st.expander("🖼️ Mô tả trực quan mô hình"):
-        st.markdown("### Các hình ảnh minh họa cho mô hình Hồi quy Logistic và quy trình đánh giá rủi ro")
+        st.markdown("### Các hình ảnh minh họa cho mô hình Stacking Ensemble và quy trình đánh giá rủi ro")
 
         # Hiển thị hình ảnh trong columns để layout đẹp hơn
         col_img1, col_img2 = st.columns(2)
@@ -1220,8 +1261,26 @@ with tab_goal:
     """, unsafe_allow_html=True)
 
 with tab_build:
-    st.header("🛠️ Xây dựng & Đánh giá Mô hình LogReg")
-    st.info("Mô hình Hồi quy Logistic đã được huấn luyện trên **20% dữ liệu Test (chưa thấy)**.")
+    st.header("🛠️ Xây dựng & Đánh giá Mô hình Stacking Ensemble")
+    st.info("**Mô hình Stacking Classifier** đã được huấn luyện với **3 Base Models** (Logistic, RandomForest, XGBoost) + **Meta-Model** (Logistic) trên **20% dữ liệu Test (chưa thấy)**.")
+
+    # Thêm expander để giải thích về Stacking Model
+    with st.expander("ℹ️ Giải thích về Mô hình Stacking"):
+        st.markdown("""
+        **Stacking Classifier** là phương pháp ensemble learning cao cấp:
+
+        - **3 Base Models (Mô hình cơ sở)**:
+          - **Logistic Regression**: Mô hình tuyến tính, dễ giải thích
+          - **Random Forest**: Mô hình cây quyết định, xử lý tốt các quan hệ phi tuyến
+          - **XGBoost**: Mô hình gradient boosting, hiệu suất cao
+
+        - **Meta-Model (Mô hình tổng hợp)**:
+          - **Logistic Regression** học cách kết hợp dự đoán từ 3 base models
+          - Sử dụng probability predictions từ 3 base models làm đầu vào
+          - **Cross-validation 5-fold** để tránh overfitting
+
+        **Ưu điểm**: Kết hợp điểm mạnh của nhiều thuật toán, độ chính xác cao hơn, robust hơn.
+        """)
     
     # Hiển thị Metrics quan trọng bằng st.metric
     st.subheader("1. Tổng quan Kết quả Đánh giá (Test Set)")
@@ -1394,35 +1453,98 @@ with tab_predict:
         # Tạo payload data cho AI (Sử dụng tên tiếng Việt)
         data_for_ai = ratios_display.to_dict()['Giá trị']
         
-        # (Tuỳ chọn) dự báo PD nếu mô hình đã huấn luyện đúng cấu trúc X_1..X_14
+        # ================================================================================================
+        # DỰ BÁO PD TỪ 4 MODELS: 3 Base Models + 1 Stacking Model
+        # ================================================================================================
         probs = np.nan
         preds = np.nan
+        probs_logistic = np.nan
+        probs_rf = np.nan
+        probs_xgb = np.nan
+
         # Kiểm tra mô hình có sẵn sàng dự báo không (đã train và cột khớp)
         if set(X.columns) == set(ratios_predict.columns):
             try:
                 # Đảm bảo thứ tự cột cho predict đúng như thứ tự cột huấn luyện
-                probs_array = model.predict_proba(ratios_predict[X.columns])[:, 1]
-                # Chuyển từ numpy array sang scalar để tránh lỗi ambiguous truth value
+                X_new = ratios_predict[X.columns]
+
+                # 1. PD từ Stacking Model (Model chính - kết quả cuối cùng)
+                probs_array = model.predict_proba(X_new)[:, 1]
                 probs = float(probs_array[0])
                 preds = int(probs >= 0.15)
-                # Thêm PD vào payload AI
-                data_for_ai['Xác suất Vỡ nợ (PD)'] = probs
+
+                # 2. PD từ 3 Base Models (để hiển thị riêng)
+                probs_logistic = float(model_logistic.predict_proba(X_new)[:, 1][0])
+                probs_rf = float(model_rf.predict_proba(X_new)[:, 1][0])
+                probs_xgb = float(model_xgb.predict_proba(X_new)[:, 1][0])
+
+                # Thêm PD vào payload AI (chỉ dùng PD từ Stacking - kết quả cuối cùng)
+                data_for_ai['Xác suất Vỡ nợ (PD) - Stacking'] = probs
+                data_for_ai['Xác suất Vỡ nợ (PD) - Logistic'] = probs_logistic
+                data_for_ai['Xác suất Vỡ nợ (PD) - RandomForest'] = probs_rf
+                data_for_ai['Xác suất Vỡ nợ (PD) - XGBoost'] = probs_xgb
                 data_for_ai['Dự đoán PD'] = "Default (Vỡ nợ)" if preds == 1 else "Non-Default (Không vỡ nợ)"
             except Exception as e:
                 # Nếu có lỗi dự báo, chỉ cảnh báo, không dừng app
                 st.warning(f"Không dự báo được PD: {e}")
         
-        # ------------------------------------------------------------------------------------------------
-        # ĐIỀU CHỈNH CỦA CHUYÊN GIA PYTHON: Bỏ .T để hiển thị đúng Tên Biến | Con số
-        # ------------------------------------------------------------------------------------------------
-        pd_col_1, pd_col_2, pd_col_pd = st.columns([2, 2, 1]) # Chia làm 3 cột, 2 cột giữa hiển thị ratios, 1 cột cuối hiển thị PD
-        
+        # ================================================================================================
+        # HIỂN THỊ 4 PD: 3 PD từ Base Models + 1 PD cuối cùng từ Stacking (KẾT QUẢ CHÍNH)
+        # ================================================================================================
+
+        # Hiển thị 4 PD theo layout 4 cột
+        st.markdown("#### 🎯 Dự báo Xác suất Vỡ nợ (PD) từ 4 Mô hình")
+        pd_col_logistic, pd_col_rf, pd_col_xgb, pd_col_stacking = st.columns(4)
+
+        with pd_col_logistic:
+            pd_value_log = f"{probs_logistic:.2%}" if pd.notna(probs_logistic) else "N/A"
+            st.metric(
+                label="**PD - Logistic**",
+                value=pd_value_log,
+                delta="⬆️ Cao" if pd.notna(probs_logistic) and probs_logistic >= 0.15 else "⬇️ Thấp",
+                delta_color=("inverse" if pd.notna(probs_logistic) and probs_logistic >= 0.15 else "normal")
+            )
+
+        with pd_col_rf:
+            pd_value_rf = f"{probs_rf:.2%}" if pd.notna(probs_rf) else "N/A"
+            st.metric(
+                label="**PD - RandomForest**",
+                value=pd_value_rf,
+                delta="⬆️ Cao" if pd.notna(probs_rf) and probs_rf >= 0.15 else "⬇️ Thấp",
+                delta_color=("inverse" if pd.notna(probs_rf) and probs_rf >= 0.15 else "normal")
+            )
+
+        with pd_col_xgb:
+            pd_value_xgb = f"{probs_xgb:.2%}" if pd.notna(probs_xgb) else "N/A"
+            st.metric(
+                label="**PD - XGBoost**",
+                value=pd_value_xgb,
+                delta="⬆️ Cao" if pd.notna(probs_xgb) and probs_xgb >= 0.15 else "⬇️ Thấp",
+                delta_color=("inverse" if pd.notna(probs_xgb) and probs_xgb >= 0.15 else "normal")
+            )
+
+        with pd_col_stacking:
+            pd_value_stacking = f"{probs:.2%}" if pd.notna(probs) else "N/A"
+            pd_delta = "⚠️ RỦI RO CAO" if pd.notna(preds) and preds == 1 else "✅ RỦI RO THẤP"
+            st.metric(
+                label="**🏆 PD - STACKING (Cuối cùng)**",
+                value=pd_value_stacking,
+                delta=pd_delta if pd.notna(probs) else None,
+                delta_color=("inverse" if pd.notna(preds) and preds == 1 else "normal")
+            )
+
+        st.divider()
+
+        # Hiển thị Chỉ số Tài chính
+        st.markdown("#### 📊 Chi tiết Chỉ số Tài chính")
+        pd_col_1, pd_col_2 = st.columns(2) # Chia làm 2 cột cho ratios
+
         ratios_list = ratios_display.index.tolist()
         mid_point = len(ratios_list) // 2
         # ratios_display đã có cấu trúc đúng: Index (Tên biến) | Giá trị (Con số)
         ratios_part1 = ratios_display.iloc[:mid_point]
         ratios_part2 = ratios_display.iloc[mid_point:]
-        
+
         # Hàm styling (GIỮ NGUYÊN)
         def color_ratios(val):
             """Ánh xạ màu dựa trên tên chỉ số và giá trị (tạm thời để hiển thị đẹp)"""
@@ -1440,7 +1562,7 @@ with tab_predict:
 
         with pd_col_1:
              # Đảm bảo hiển thị Tên biến | Giá trị
-             st.markdown("##### **Chỉ số Tài chính (1/2)**") 
+             st.markdown("##### **Chỉ số Tài chính (1/2)**")
              st.dataframe(
                  ratios_part1.style.apply(color_ratios, axis=1).format("{:.4f}").set_properties(**{'font-size': '14px'}),
                  use_container_width=True
@@ -1453,19 +1575,7 @@ with tab_predict:
                 ratios_part2.style.apply(color_ratios, axis=1).format("{:.4f}").set_properties(**{'font-size': '14px'}),
                 use_container_width=True
             )
-        
-        with pd_col_pd:
-            pd_value = f"{probs:.2%}" if pd.notna(probs) else "N/A"
-            pd_delta = "⬆️ Rủi ro cao" if pd.notna(preds) and preds == 1 else "⬇️ Rủi ro thấp"
-
-            st.metric(
-                label="**Xác suất Vỡ nợ (PD)**",
-                value=pd_value,
-                delta=pd_delta if pd.notna(probs) else None,
-                # Đảo ngược màu sắc delta cho PD: Rủi ro cao là màu đỏ (inverse), rủi ro thấp là màu xanh (normal)
-                delta_color=("inverse" if pd.notna(preds) and preds == 1 else "normal")
-            )
-        # ------------------------------------------------------------------------------------------------
+        # ================================================================================================
 
         st.divider()
 
