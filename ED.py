@@ -665,7 +665,69 @@ div[data-testid="stSpinner"] > div {
     background: linear-gradient(180deg, #e91e63, #f06292);
 }
 
+/* ========== STICKY "LÊN ĐẦU TRANG" BUTTON ========== */
+.scroll-to-top {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    z-index: 9999;
+    cursor: pointer;
+}
+
+.scroll-to-top button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 15px 25px;
+    border-radius: 50px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.scroll-to-top button:hover {
+    background: linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%);
+    box-shadow: 0 8px 30px rgba(102, 126, 234, 0.7);
+    transform: translateY(-3px) scale(1.05);
+}
+
+.scroll-to-top button:active {
+    transform: translateY(-1px) scale(0.98);
+}
+
 </style>
+""", unsafe_allow_html=True)
+
+# ========================================
+# JAVASCRIPT CHO NÚT "LÊN ĐẦU TRANG" STICKY
+# ========================================
+st.markdown("""
+<script>
+    // Tạo nút lên đầu trang sticky
+    window.addEventListener('load', function() {
+        // Tạo nút nếu chưa có
+        if (!document.getElementById('scrollToTopBtn')) {
+            var btn = document.createElement('div');
+            btn.id = 'scrollToTopBtn';
+            btn.className = 'scroll-to-top';
+            btn.innerHTML = '<button onclick="scrollToTop()">⬆️ Lên đầu trang</button>';
+            document.body.appendChild(btn);
+        }
+    });
+
+    // Hàm scroll lên đầu trang
+    function scrollToTop() {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    }
+</script>
 """, unsafe_allow_html=True)
 
 
@@ -761,6 +823,141 @@ def chat_with_gemini(user_message: str, api_key: str, context_data: dict = None)
 # =========================
 
 @st.cache_data(ttl=2592000)  # Cache 30 ngày (tự động cập nhật mỗi tháng)
+def get_industry_data_from_ai(api_key: str, industry_name: str) -> dict:
+    """
+    Lấy dữ liệu ngành cụ thể từ Gemini API.
+
+    Args:
+        api_key: API key của Gemini
+        industry_name: Tên ngành (VD: "Nông nghiệp", "Sản xuất", "Bất động sản"...)
+
+    Returns:
+        dict chứa dữ liệu ngành và phân tích
+    """
+    if not _GEMINI_OK:
+        return None
+
+    try:
+        client = genai.Client(api_key=api_key)
+
+        sys_prompt = """Bạn là chuyên gia phân tích kinh tế và dữ liệu ngành tại Việt Nam.
+        Nhiệm vụ của bạn là cung cấp dữ liệu thống kê và phân tích về một ngành cụ thể."""
+
+        user_prompt = f"""Hãy cung cấp dữ liệu và phân tích cho ngành **{industry_name}** tại Việt Nam trong 3 năm gần nhất.
+
+        Trả về dữ liệu dưới dạng JSON với cấu trúc sau (CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH):
+        {{
+            "industry_name": "{industry_name}",
+            "revenue_growth_quarterly": {{
+                "quarters": ["Q1-2022", "Q2-2022", ...],
+                "growth_rate": [2.5, 3.1, ...]
+            }},
+            "avg_gross_margin_3y": 25.5,
+            "avg_net_profit_margin": 8.3,
+            "avg_debt_to_equity": 1.2,
+            "pmi_monthly": {{
+                "months": ["2024-01", "2024-02", ...],
+                "pmi": [52.3, 51.8, ...]
+            }},
+            "new_vs_closed_businesses": {{
+                "quarters": ["Q1-2022", "Q2-2022", ...],
+                "new": [1200, 1350, ...],
+                "closed": [450, 380, ...]
+            }},
+            "analysis": "Phân tích sơ bộ về tình hình ngành..."
+        }}"""
+
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[{"role": "user", "parts": [{"text": sys_prompt + "\n\n" + user_prompt}]}],
+            config={"system_instruction": sys_prompt}
+        )
+
+        import json
+        import re
+
+        response_text = response.text.strip()
+        if "```json" in response_text:
+            response_text = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL).group(1)
+        elif "```" in response_text:
+            response_text = re.search(r'```\s*(\{.*?\})\s*```', response_text, re.DOTALL).group(1)
+
+        data = json.loads(response_text)
+        return data
+
+    except Exception as e:
+        st.error(f"Lỗi khi lấy dữ liệu ngành từ AI: {e}")
+        return None
+
+
+def get_macro_data_from_ai(api_key: str) -> dict:
+    """
+    Lấy dữ liệu vĩ mô nền kinh tế Việt Nam từ Gemini API.
+
+    Returns:
+        dict chứa dữ liệu vĩ mô và phân tích
+    """
+    if not _GEMINI_OK:
+        return None
+
+    try:
+        client = genai.Client(api_key=api_key)
+
+        sys_prompt = """Bạn là chuyên gia kinh tế vĩ mô Việt Nam.
+        Nhiệm vụ của bạn là cung cấp dữ liệu vĩ mô quan trọng của nền kinh tế."""
+
+        user_prompt = """Hãy cung cấp dữ liệu vĩ mô nền kinh tế Việt Nam trong 3-5 năm gần nhất.
+
+        Trả về dữ liệu dưới dạng JSON với cấu trúc sau (CHỈ TRẢ VỀ JSON, KHÔNG GIẢI THÍCH):
+        {
+            "lending_rate_vs_interbank": {
+                "quarters": ["Q1-2020", "Q2-2020", ...],
+                "lending_rate": [8.5, 8.3, ...],
+                "interbank_rate": [4.2, 4.0, ...]
+            },
+            "gdp_growth": {
+                "quarters": ["Q1-2020", "Q2-2020", ...],
+                "growth_rate": [3.7, 2.1, 6.7, 7.0, ...]
+            },
+            "unemployment_rate": {
+                "years": ["2020", "2021", "2022", "2023", "2024"],
+                "rate": [2.3, 2.5, 2.3, 2.2, 2.1]
+            },
+            "npl_ratio": {
+                "quarters": ["Q1-2022", "Q2-2022", ...],
+                "npl_rate": [1.9, 2.0, 2.1, ...],
+                "default_rate": [0.5, 0.6, ...]
+            },
+            "financial_stress_index": {
+                "months": ["2023-01", "2023-02", ...],
+                "fsi": [0.3, 0.4, 0.2, ...]
+            },
+            "analysis": "Phân tích tổng quan về tình hình kinh tế vĩ mô..."
+        }"""
+
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[{"role": "user", "parts": [{"text": sys_prompt + "\n\n" + user_prompt}]}],
+            config={"system_instruction": sys_prompt}
+        )
+
+        import json
+        import re
+
+        response_text = response.text.strip()
+        if "```json" in response_text:
+            response_text = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL).group(1)
+        elif "```" in response_text:
+            response_text = re.search(r'```\s*(\{.*?\})\s*```', response_text, re.DOTALL).group(1)
+
+        data = json.loads(response_text)
+        return data
+
+    except Exception as e:
+        st.error(f"Lỗi khi lấy dữ liệu vĩ mô từ AI: {e}")
+        return None
+
+
 def get_financial_data_from_ai(api_key: str) -> pd.DataFrame:
     """
     Tự động lấy dữ liệu tài chính doanh nghiệp Việt Nam từ Gemini API.
@@ -1238,28 +1435,6 @@ with tab_goal:
                 # Nếu không tìm thấy file, hiển thị message thân thiện
                 st.info(f"📊 Hình ảnh minh họa '{img}' sẽ được hiển thị ở đây")
 
-    # Nút lên đầu trang
-    st.markdown("""
-        <div style='text-align: center; margin-top: 40px; margin-bottom: 20px;'>
-            <a href='#top' onclick='window.scrollTo({top: 0, behavior: "smooth"}); return false;' style='text-decoration: none;'>
-                <button style='
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    border: none;
-                    padding: 12px 30px;
-                    border-radius: 25px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-                    transition: all 0.3s ease;
-                '>
-                    ⬆️ Lên đầu trang
-                </button>
-            </a>
-        </div>
-    """, unsafe_allow_html=True)
-
 with tab_build:
     st.header("🛠️ Xây dựng & Đánh giá Mô hình Stacking Ensemble")
     st.info("**Mô hình Stacking Classifier** đã được huấn luyện với **3 Base Models** (Logistic, RandomForest, XGBoost) + **Meta-Model** (Logistic) trên **20% dữ liệu Test (chưa thấy)**.")
@@ -1398,28 +1573,6 @@ with tab_build:
 
         st.dataframe(dt.style.format("{:.4f}").apply(highlight_max, axis=1), use_container_width=True)
 
-    # Nút lên đầu trang
-    st.markdown("""
-        <div style='text-align: center; margin-top: 40px; margin-bottom: 20px;'>
-            <a href='#top' onclick='window.scrollTo({top: 0, behavior: "smooth"}); return false;' style='text-decoration: none;'>
-                <button style='
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    border: none;
-                    padding: 12px 30px;
-                    border-radius: 25px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-                    transition: all 0.3s ease;
-                '>
-                    ⬆️ Lên đầu trang
-                </button>
-            </a>
-        </div>
-    """, unsafe_allow_html=True)
-
 with tab_predict:
     # Trang này được hiển thị mặc định
     st.header("⚡ Dự báo PD & Phân tích AI cho Hồ sơ mới")
@@ -1489,12 +1642,14 @@ with tab_predict:
                 st.warning(f"Không dự báo được PD: {e}")
         
         # ================================================================================================
-        # HIỂN THỊ 4 PD: 3 PD từ Base Models + 1 PD cuối cùng từ Stacking (KẾT QUẢ CHÍNH)
+        # HIỂN THỊ 4 PD: 3 PD từ Base Models ở trên + 1 PD cuối cùng từ Stacking ở dưới (KẾT QUẢ CHÍNH)
         # ================================================================================================
 
-        # Hiển thị 4 PD theo layout 4 cột
         st.markdown("#### 🎯 Dự báo Xác suất Vỡ nợ (PD) từ 4 Mô hình")
-        pd_col_logistic, pd_col_rf, pd_col_xgb, pd_col_stacking = st.columns(4)
+
+        # Hiển thị 3 PD từ Base Models trên 1 hàng
+        st.markdown("##### 📊 Dự báo từ 3 Mô hình Cơ sở")
+        pd_col_logistic, pd_col_rf, pd_col_xgb = st.columns(3)
 
         with pd_col_logistic:
             pd_value_log = f"{probs_logistic:.2%}" if pd.notna(probs_logistic) else "N/A"
@@ -1523,15 +1678,41 @@ with tab_predict:
                 delta_color=("inverse" if pd.notna(probs_xgb) and probs_xgb >= 0.15 else "normal")
             )
 
-        with pd_col_stacking:
+        # Hiển thị PD Stacking nổi bật ở dưới
+        st.markdown("##### 🏆 KẾT QUẢ DỰ BÁO CUỐI CÙNG (STACKING MODEL)")
+
+        # Tạo container nổi bật cho PD Stacking
+        stacking_container = st.container()
+        with stacking_container:
+            # Sử dụng markdown với style đặc biệt
             pd_value_stacking = f"{probs:.2%}" if pd.notna(probs) else "N/A"
             pd_delta = "⚠️ RỦI RO CAO" if pd.notna(preds) and preds == 1 else "✅ RỦI RO THẤP"
-            st.metric(
-                label="**🏆 PD - STACKING (Cuối cùng)**",
-                value=pd_value_stacking,
-                delta=pd_delta if pd.notna(probs) else None,
-                delta_color=("inverse" if pd.notna(preds) and preds == 1 else "normal")
-            )
+            risk_color = "#dc3545" if pd.notna(preds) and preds == 1 else "#28a745"
+
+            st.markdown(f"""
+            <div style='
+                background: linear-gradient(135deg, #fff5f7 0%, #ffe8f0 100%);
+                border: 3px solid {risk_color};
+                border-radius: 15px;
+                padding: 30px;
+                text-align: center;
+                box-shadow: 0 10px 30px rgba(255, 107, 157, 0.3);
+                margin: 20px 0;
+            '>
+                <div style='font-size: 18px; font-weight: 700; color: #c2185b; margin-bottom: 15px;'>
+                    🏆 XÁC SUẤT VỠ NỢ (PD) - STACKING MODEL
+                </div>
+                <div style='font-size: 48px; font-weight: 900; color: {risk_color}; margin: 20px 0;'>
+                    {pd_value_stacking}
+                </div>
+                <div style='font-size: 20px; font-weight: 700; color: {risk_color};'>
+                    {pd_delta}
+                </div>
+                <div style='font-size: 14px; color: #7f8c8d; margin-top: 15px; font-style: italic;'>
+                    💡 AI sử dụng kết quả này để phân tích và đề xuất quyết định tín dụng
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.divider()
 
@@ -1947,104 +2128,81 @@ with tab_predict:
     else:
         st.info("Hãy tải **ho_so_dn.xlsx** (đủ 3 sheet) để tính X1…X14, dự báo PD và phân tích AI.")
 
-    # Nút lên đầu trang
-    st.markdown("""
-        <div style='text-align: center; margin-top: 40px; margin-bottom: 20px;'>
-            <a href='#top' onclick='window.scrollTo({top: 0, behavior: "smooth"}); return false;' style='text-decoration: none;'>
-                <button style='
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    border: none;
-                    padding: 12px 30px;
-                    border-radius: 25px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-                    transition: all 0.3s ease;
-                '>
-                    ⬆️ Lên đầu trang
-                </button>
-            </a>
-        </div>
-    """, unsafe_allow_html=True)
-
 # ========================================
-# TAB: DASHBOARD TÀI CHÍNH DOANH NGHIỆP (GSO)
+# TAB: DASHBOARD TÀI CHÍNH DOANH NGHIỆP
 # ========================================
 with tab_dashboard:
-    st.header("📊 Dashboard Tài chính Doanh nghiệp Việt Nam")
+    st.header("📊 Dashboard Tài chính & Kinh tế")
     st.markdown("""
-    Dashboard này hiển thị các xu hướng tài chính của doanh nghiệp Việt Nam theo quý,
-    dựa trên dữ liệu từ **Tổng cục Thống kê (GSO) - General Statistics Office of Vietnam**.
+    Dashboard phân tích các chỉ số ngành và vĩ mô để hỗ trợ quyết định cho vay,
+    dữ liệu được lấy tự động từ **Gemini AI** và các nguồn tin cậy.
     """)
 
     st.divider()
 
-    # Khu vực upload và hướng dẫn
+    # Hướng dẫn sử dụng
     info_container = st.container(border=True)
     with info_container:
-        st.markdown("### 📥 Nguồn Dữ liệu")
-
-        # Highlight tính năng mới
-        st.success("""
-        🆕 **TÍNH NĂNG MỚI**: Tự động lấy dữ liệu tài chính doanh nghiệp Việt Nam từ **Gemini AI**!
-        - ✅ Tự động cập nhật theo tháng (cache 30 ngày)
-        - ✅ Dữ liệu từ nguồn tin cậy (GSO, Bộ KH&ĐT)
-        - ✅ Không cần tải file thủ công
+        st.markdown("### 📖 Hướng dẫn sử dụng")
+        st.info("""
+        **Cách sử dụng Dashboard:**
+        1. 📁 **Chọn loại phân tích**: Chọn ngành cụ thể hoặc "Tổng quan" để xem dữ liệu vĩ mô
+        2. 🤖 **AI lấy dữ liệu tự động**: Bấm nút để Gemini AI lấy dữ liệu mới nhất
+        3. 📊 **Xem biểu đồ**: Dữ liệu được hiển thị trực quan qua các biểu đồ
+        4. 💡 **Đọc phân tích**: AI phân tích sơ bộ từng chỉ số
+        5. 🔍 **Phân tích sâu**: Bấm nút để AI đánh giá ảnh hưởng đến quyết định cho vay
         """)
-
-        with st.expander("📖 Hướng dẫn sử dụng các nguồn dữ liệu"):
-            st.markdown("""
-            **🚀 Tự động lấy từ Gemini AI (Khuyến nghị):**
-            - Nhấn nút **"Bấm để tạo"** để tự động lấy dữ liệu mới nhất
-            - Dữ liệu được cache 30 ngày, tự động cập nhật mỗi tháng
-            - Nguồn dữ liệu: GSO, Bộ KH&ĐT, báo cáo kinh tế vĩ mô
-
-            **📂 Tải lên dữ liệu GSO thủ công:**
-            1. Truy cập: [https://gso.gov.vn](https://gso.gov.vn)
-            2. Chọn mục **Số liệu thống kê** → **Doanh nghiệp**
-            3. Tải về file Excel/CSV chứa dữ liệu theo quý
-            4. Upload file vào đây để phân tích
-
-            **📊 Dùng Thử:**
-            - Sử dụng dữ liệu mẫu để khám phá tính năng
-
-            **Định dạng file yêu cầu (khi upload thủ công):**
-            - File CSV hoặc Excel (.xlsx)
-            - Cột **Quý/Năm** (ví dụ: Q1-2023, Q2-2023...)
-            - Cột **Doanh thu** (đơn vị: tỷ đồng)
-            - Cột **Tổng tài sản** (đơn vị: tỷ đồng)
-            - Các cột khác: Lợi nhuận, Nợ phải trả, VCSH... (tùy chọn)
-            """)
 
     st.divider()
 
-    # Upload file, lấy dữ liệu từ AI, hoặc sử dụng dữ liệu mẫu
-    col_ai, col_sample, col_upload = st.columns([1, 1, 2])
+    # Chọn loại phân tích: Ngành hoặc Tổng quan
+    st.markdown("### 1️⃣ Chọn loại phân tích")
 
-    with col_ai:
-        st.markdown("#### 🤖 Dữ liệu lấy từ Gemini")
-        use_ai_data = st.button("🚀 Bấm để tạo", use_container_width=True, type="primary",
-                                help="Tự động lấy dữ liệu tài chính doanh nghiệp VN mới nhất từ Gemini AI")
+    # Danh sách ngành
+    industries = [
+        "Tổng quan (Vĩ mô)",
+        "Nông nghiệp, Lâm nghiệp và Thủy sản",
+        "Khai khoáng",
+        "Công nghiệp chế biến, chế tạo",
+        "Sản xuất và phân phối điện, khí đốt, nước",
+        "Xây dựng",
+        "Bán buôn và bán lẻ",
+        "Vận tải và kho bãi",
+        "Dịch vụ lưu trú và ăn uống",
+        "Thông tin và truyền thông",
+        "Hoạt động tài chính, ngân hàng và bảo hiểm",
+        "Kinh doanh bất động sản",
+        "Hoạt động chuyên môn, khoa học và công nghệ",
+        "Giáo dục và đào tạo",
+        "Y tế và hoạt động trợ giúp xã hội"
+    ]
 
-    with col_sample:
-        st.markdown("#### 🎯 Demo Thử Mẫu")
-        use_sample = st.button("📊 Dùng Thử", use_container_width=True, type="secondary")
+    selected_analysis = st.selectbox(
+        "🔍 Chọn ngành hoặc tổng quan:",
+        industries,
+        index=0,
+        key="analysis_type"
+    )
 
-    with col_upload:
-        st.markdown("#### 📂 Tải lên Dữ liệu GSO")
-        uploaded_gso = st.file_uploader(
-            "Chọn file CSV hoặc Excel chứa dữ liệu GSO",
-            type=['csv', 'xlsx'],
-            key="gso_upload"
-        )
+    st.divider()
 
-    # Biến lưu DataFrame
-    gso_data = None
+    # Nút lấy dữ liệu
+    st.markdown("### 2️⃣ Lấy dữ liệu từ AI")
+    get_data_btn = st.button("🤖 Lấy dữ liệu & Phân tích", use_container_width=True, type="primary")
 
-    # Xử lý upload file
-    if uploaded_gso is not None:
+    # Xử lý khi người dùng bấm nút
+    if get_data_btn:
+        if not _GEMINI_OK:
+            st.error("❌ Thiếu thư viện google-genai. Vui lòng cài đặt: pip install google-genai")
+        else:
+            api_key = st.secrets.get("GEMINI_API_KEY")
+            if not api_key:
+                st.error("❌ **Lỗi Khóa API**: Không tìm thấy GEMINI_API_KEY trong Streamlit Secrets.")
+            else:
+                # Xác định loại phân tích
+                is_macro = selected_analysis == "Tổng quan (Vĩ mô)"
+
+                if is_macro:
         try:
             with st.spinner('Đang đọc dữ liệu từ file...'):
                 if uploaded_gso.name.endswith('.csv'):
@@ -2346,28 +2504,6 @@ with tab_dashboard:
     else:
         st.info("💡 Vui lòng tải lên file dữ liệu GSO hoặc sử dụng dữ liệu mẫu để xem phân tích.")
 
-    # Nút lên đầu trang
-    st.markdown("""
-        <div style='text-align: center; margin-top: 40px; margin-bottom: 20px;'>
-            <a href='#top' onclick='window.scrollTo({top: 0, behavior: "smooth"}); return false;' style='text-decoration: none;'>
-                <button style='
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    border: none;
-                    padding: 12px 30px;
-                    border-radius: 25px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-                    transition: all 0.3s ease;
-                '>
-                    ⬆️ Lên đầu trang
-                </button>
-            </a>
-        </div>
-    """, unsafe_allow_html=True)
-
 # ========================================
 # TAB: TIN TỨC TÀI CHÍNH
 # ========================================
@@ -2541,28 +2677,6 @@ with tab_news:
                     </div>
                     """, unsafe_allow_html=True)
 
-    # Nút lên đầu trang
-    st.markdown("""
-        <div style='text-align: center; margin-top: 40px; margin-bottom: 20px;'>
-            <a href='#top' onclick='window.scrollTo({top: 0, behavior: "smooth"}); return false;' style='text-decoration: none;'>
-                <button style='
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    border: none;
-                    padding: 12px 30px;
-                    border-radius: 25px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-                    transition: all 0.3s ease;
-                '>
-                    ⬆️ Lên đầu trang
-                </button>
-            </a>
-        </div>
-    """, unsafe_allow_html=True)
-
 # ========================================
 # TAB: NHÓM TÁC GIẢ
 # ========================================
@@ -2710,28 +2824,6 @@ with tab_authors:
             <div style='margin-top: 20px; font-size: 2rem;'>
                 💡 🎯 🌟 💼 🏆
             </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Nút lên đầu trang
-    st.markdown("""
-        <div style='text-align: center; margin-top: 40px; margin-bottom: 20px;'>
-            <a href='#top' onclick='window.scrollTo({top: 0, behavior: "smooth"}); return false;' style='text-decoration: none;'>
-                <button style='
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    border: none;
-                    padding: 12px 30px;
-                    border-radius: 25px;
-                    font-size: 16px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-                    transition: all 0.3s ease;
-                '>
-                    ⬆️ Lên đầu trang
-                </button>
-            </a>
         </div>
     """, unsafe_allow_html=True)
 
