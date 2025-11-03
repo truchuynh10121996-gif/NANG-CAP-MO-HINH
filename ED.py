@@ -969,6 +969,7 @@ def get_industry_data_from_ai(api_key: str, industry_name: str) -> dict:
         return None
 
 
+@st.cache_data(ttl=2592000)  # Cache 30 ngày (dữ liệu vĩ mô ít thay đổi)
 def get_macro_data_from_ai(api_key: str) -> dict:
     """
     Lấy dữ liệu vĩ mô nền kinh tế Việt Nam từ Gemini API.
@@ -1421,66 +1422,94 @@ if missing:
 # ================================================================================================
 # NÂNG CẤP MÔ HÌNH: Từ Logistic đơn lẻ lên StackingClassifier với 3 base models
 # ================================================================================================
-X = df[MODEL_COLS] # Chỉ lấy các cột X_1..X_14
-y = df['default'].astype(int)
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+@st.cache_resource  # Cache models để tránh train lại mỗi lần
+def train_models(df):
+    """Train tất cả models và trả về models + metrics"""
+    X = df[MODEL_COLS] # Chỉ lấy các cột X_1..X_14
+    y = df['default'].astype(int)
 
-# Định nghĩa 3 Base Models
-model_logistic = LogisticRegression(random_state=42, max_iter=1000, class_weight="balanced", solver="lbfgs")
-model_rf = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=10, class_weight="balanced")
-model_xgb = XGBClassifier(n_estimators=100, random_state=42, max_depth=6, learning_rate=0.1,
-                          use_label_encoder=False, eval_metric='logloss')
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
 
-# Tạo StackingClassifier với LogisticRegression làm meta-model
-estimators = [
-    ('logistic', model_logistic),
-    ('random_forest', model_rf),
-    ('xgboost', model_xgb)
-]
-model = StackingClassifier(
-    estimators=estimators,
-    final_estimator=LogisticRegression(random_state=42, max_iter=1000),
-    cv=5,  # Cross-validation 5-fold
-    stack_method='predict_proba',  # Dùng probability để stack
-    n_jobs=-1  # Sử dụng tất cả CPU cores
-)
+    # Định nghĩa 3 Base Models
+    model_logistic = LogisticRegression(random_state=42, max_iter=1000, class_weight="balanced", solver="lbfgs")
+    model_rf = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=10, class_weight="balanced")
+    model_xgb = XGBClassifier(n_estimators=100, random_state=42, max_depth=6, learning_rate=0.1,
+                              use_label_encoder=False, eval_metric='logloss')
 
-# Train tất cả models
-model.fit(X_train, y_train)
+    # Tạo StackingClassifier với LogisticRegression làm meta-model
+    estimators = [
+        ('logistic', model_logistic),
+        ('random_forest', model_rf),
+        ('xgboost', model_xgb)
+    ]
+    model = StackingClassifier(
+        estimators=estimators,
+        final_estimator=LogisticRegression(random_state=42, max_iter=1000),
+        cv=5,  # Cross-validation 5-fold
+        stack_method='predict_proba',  # Dùng probability để stack
+        n_jobs=-1  # Sử dụng tất cả CPU cores
+    )
 
-# Dự báo & đánh giá cho Stacking Model (Model chính)
-y_pred_in = model.predict(X_train)
-y_proba_in = model.predict_proba(X_train)[:, 1]
-y_pred_out = model.predict(X_test)
-y_proba_out = model.predict_proba(X_test)[:, 1]
+    # Train tất cả models
+    model.fit(X_train, y_train)
 
-# Train riêng 3 base models để lấy PD riêng biệt (để hiển thị)
-model_logistic.fit(X_train, y_train)
-model_rf.fit(X_train, y_train)
-model_xgb.fit(X_train, y_train)
+    # Dự báo & đánh giá cho Stacking Model (Model chính)
+    y_pred_in = model.predict(X_train)
+    y_proba_in = model.predict_proba(X_train)[:, 1]
+    y_pred_out = model.predict(X_test)
+    y_proba_out = model.predict_proba(X_test)[:, 1]
 
-# Tính PD từ 3 base models trên test set
-y_proba_logistic_out = model_logistic.predict_proba(X_test)[:, 1]
-y_proba_rf_out = model_rf.predict_proba(X_test)[:, 1]
-y_proba_xgb_out = model_xgb.predict_proba(X_test)[:, 1]
+    # Train riêng 3 base models để lấy PD riêng biệt (để hiển thị)
+    model_logistic.fit(X_train, y_train)
+    model_rf.fit(X_train, y_train)
+    model_xgb.fit(X_train, y_train)
 
-metrics_in = {
-    "accuracy_in": accuracy_score(y_train, y_pred_in),
-    "precision_in": precision_score(y_train, y_pred_in, zero_division=0),
-    "recall_in": recall_score(y_train, y_pred_in, zero_division=0),
-    "f1_in": f1_score(y_train, y_pred_in, zero_division=0),
-    "auc_in": roc_auc_score(y_train, y_proba_in),
-}
-metrics_out = {
-    "accuracy_out": accuracy_score(y_test, y_pred_out),
+    # Tính PD từ 3 base models trên test set
+    y_proba_logistic_out = model_logistic.predict_proba(X_test)[:, 1]
+    y_proba_rf_out = model_rf.predict_proba(X_test)[:, 1]
+    y_proba_xgb_out = model_xgb.predict_proba(X_test)[:, 1]
+
+    metrics_in = {
+        "accuracy_in": accuracy_score(y_train, y_pred_in),
+        "precision_in": precision_score(y_train, y_pred_in, zero_division=0),
+        "recall_in": recall_score(y_train, y_pred_in, zero_division=0),
+        "f1_in": f1_score(y_train, y_pred_in, zero_division=0),
+        "auc_in": roc_auc_score(y_train, y_proba_in),
+    }
+    metrics_out = {
+        "accuracy_out": accuracy_score(y_test, y_pred_out),
     "precision_out": precision_score(y_test, y_pred_out, zero_division=0),
     "recall_out": recall_score(y_test, y_pred_out, zero_division=0),
     "f1_out": f1_score(y_test, y_pred_out, zero_division=0),
     "auc_out": roc_auc_score(y_test, y_proba_out),
-}
+    }
+
+    return {
+        'model': model,
+        'model_logistic': model_logistic,
+        'model_rf': model_rf,
+        'model_xgb': model_xgb,
+        'metrics_in': metrics_in,
+        'metrics_out': metrics_out,
+        'y_proba_logistic_out': y_proba_logistic_out,
+        'y_proba_rf_out': y_proba_rf_out,
+        'y_proba_xgb_out': y_proba_xgb_out
+    }
+
+# Gọi function train_models với cache
+trained = train_models(df)
+model = trained['model']
+model_logistic = trained['model_logistic']
+model_rf = trained['model_rf']
+model_xgb = trained['model_xgb']
+metrics_in = trained['metrics_in']
+metrics_out = trained['metrics_out']
+y_proba_logistic_out = trained['y_proba_logistic_out']
+y_proba_rf_out = trained['y_proba_rf_out']
+y_proba_xgb_out = trained['y_proba_xgb_out']
 
 # --- CÁC PHẦN UI DỰA TRÊN TABS ---
 
@@ -1810,46 +1839,145 @@ with tab_predict:
         # HIỂN THỊ 4 PD: Phần này đã được di chuyển xuống dưới phần "Giải thích về Biểu đồ"
         # ================================================================================================
 
-        # Hiển thị Chỉ số Tài chính
+        # Hiển thị Chỉ số Tài chính với giao diện mới đẹp hơn
         st.markdown("#### 📊 Chi tiết Chỉ số Tài chính")
-        pd_col_1, pd_col_2 = st.columns(2) # Chia làm 2 cột cho ratios
 
+        # Hàm phân loại chỉ số và trả về màu sắc & emoji
+        def get_indicator_style(indicator_name, value):
+            """
+            Xác định màu sắc và emoji dựa trên tên chỉ số và giá trị
+            Returns: dict với 'bg_color', 'text_color', 'emoji', 'status'
+            """
+            # Chỉ số Sinh lời (X1, X2, X3, X4)
+            if "Lợi nhuận" in indicator_name or "ROA" in indicator_name or "ROE" in indicator_name:
+                if value <= 0:
+                    return {
+                        'bg_color': '#ffe8e8',  # Light red
+                        'border_color': '#ff6b6b',
+                        'text_color': '#c92a2a',
+                        'emoji': '📉',
+                        'status': 'Thấp'
+                    }
+                elif value > 0.1:
+                    return {
+                        'bg_color': '#d3f9d8',  # Light green
+                        'border_color': '#51cf66',
+                        'text_color': '#2f9e44',
+                        'emoji': '📈',
+                        'status': 'Tốt'
+                    }
+                else:
+                    return {
+                        'bg_color': '#fff9db',  # Light yellow
+                        'border_color': '#ffd43b',
+                        'text_color': '#e67700',
+                        'emoji': '⚖️',
+                        'status': 'Trung bình'
+                    }
+
+            # Chỉ số Nợ (X5, X6)
+            elif "Tỷ lệ Nợ/" in indicator_name or "Nợ" in indicator_name:
+                if value > 1.0:
+                    return {
+                        'bg_color': '#ffe8e8',
+                        'border_color': '#ff6b6b',
+                        'text_color': '#c92a2a',
+                        'emoji': '⚠️',
+                        'status': 'Cao'
+                    }
+                elif value < 0.5:
+                    return {
+                        'bg_color': '#d3f9d8',
+                        'border_color': '#51cf66',
+                        'text_color': '#2f9e44',
+                        'emoji': '✅',
+                        'status': 'An toàn'
+                    }
+                else:
+                    return {
+                        'bg_color': '#fff9db',
+                        'border_color': '#ffd43b',
+                        'text_color': '#e67700',
+                        'emoji': '⚖️',
+                        'status': 'Chấp nhận'
+                    }
+
+            # Chỉ số Thanh khoản (X7, X8)
+            elif "Thanh toán" in indicator_name or "Khả năng" in indicator_name:
+                if value < 1.0:
+                    return {
+                        'bg_color': '#ffe8e8',
+                        'border_color': '#ff6b6b',
+                        'text_color': '#c92a2a',
+                        'emoji': '💧',
+                        'status': 'Yếu'
+                    }
+                elif value > 1.5:
+                    return {
+                        'bg_color': '#d3f9d8',
+                        'border_color': '#51cf66',
+                        'text_color': '#2f9e44',
+                        'emoji': '💪',
+                        'status': 'Mạnh'
+                    }
+                else:
+                    return {
+                        'bg_color': '#fff9db',
+                        'border_color': '#ffd43b',
+                        'text_color': '#e67700',
+                        'emoji': '⚖️',
+                        'status': 'Ổn định'
+                    }
+
+            # Mặc định cho các chỉ số khác
+            else:
+                return {
+                    'bg_color': '#e7f5ff',  # Light blue
+                    'border_color': '#74c0fc',
+                    'text_color': '#1971c2',
+                    'emoji': '📊',
+                    'status': 'Bình thường'
+                }
+
+        # Hiển thị các chỉ số trong grid 2 cột
         ratios_list = ratios_display.index.tolist()
-        mid_point = len(ratios_list) // 2
-        # ratios_display đã có cấu trúc đúng: Index (Tên biến) | Giá trị (Con số)
-        ratios_part1 = ratios_display.iloc[:mid_point]
-        ratios_part2 = ratios_display.iloc[mid_point:]
+        values_list = ratios_display['Giá trị'].values
 
-        # Hàm styling (GIỮ NGUYÊN)
-        def color_ratios(val):
-            """Ánh xạ màu dựa trên tên chỉ số và giá trị (tạm thời để hiển thị đẹp)"""
-            # Chỉ số Thanh khoản (X7, X8) - Green/Yellow
-            if "Thanh toán" in val.name and val.values[0] < 1.0: return ['background-color: #ffcccc' for _ in val] # Dưới 1: Báo động đỏ
-            if "Thanh toán" in val.name and val.values[0] > 1.5: return ['background-color: #ccffcc' for _ in val] # Trên 1.5: Tốt
-            # Chỉ số Nợ (X5, X6) - Red/Green
-            if "Tỷ lệ Nợ/" in val.name and val.values[0] > 1.0: return ['background-color: #ffcccc' for _ in val] # Trên 1: Rủi ro cao
-            if "Tỷ lệ Nợ/" in val.name and val.values[0] < 0.5: return ['background-color: #ccffcc' for _ in val] # Dưới 0.5: Tốt
-            # Chỉ số Sinh lời (X1, X2, X3, X4) - Green/Yellow
-            if "Lợi nhuận" in val.name or "ROA" in val.name or "ROE" in val.name:
-                if val.values[0] <= 0: return ['background-color: #ffcccc' for _ in val]
-                if val.values[0] > 0.1: return ['background-color: #ccffcc' for _ in val]
-            return [''] * len(val)
+        # Chia làm 2 cột
+        cols_per_row = 2
+        num_indicators = len(ratios_list)
 
-        with pd_col_1:
-             # Đảm bảo hiển thị Tên biến | Giá trị
-             st.markdown("##### **Chỉ số Tài chính (1/2)**")
-             st.dataframe(
-                 ratios_part1.style.apply(color_ratios, axis=1).format("{:.4f}").set_properties(**{'font-size': '14px'}),
-                 use_container_width=True
-             )
+        for i in range(0, num_indicators, cols_per_row):
+            cols = st.columns(cols_per_row)
+            for j in range(cols_per_row):
+                idx = i + j
+                if idx < num_indicators:
+                    indicator_name = ratios_list[idx]
+                    value = values_list[idx]
+                    style = get_indicator_style(indicator_name, value)
 
-        with pd_col_2:
-            # Đảm bảo hiển thị Tên biến | Giá trị
-            st.markdown("##### **Chỉ số Tài chính (2/2)**")
-            st.dataframe(
-                ratios_part2.style.apply(color_ratios, axis=1).format("{:.4f}").set_properties(**{'font-size': '14px'}),
-                use_container_width=True
-            )
+                    with cols[j]:
+                        st.markdown(f"""
+                        <div style='
+                            background: {style['bg_color']};
+                            border-left: 4px solid {style['border_color']};
+                            border-radius: 8px;
+                            padding: 15px;
+                            margin: 8px 0;
+                            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+                        '>
+                            <div style='font-size: 12px; color: {style['text_color']}; font-weight: 600; margin-bottom: 5px;'>
+                                {style['emoji']} {indicator_name[:40]}
+                            </div>
+                            <div style='font-size: 24px; font-weight: 900; color: {style['text_color']}; margin: 8px 0;'>
+                                {value:.4f}
+                            </div>
+                            <div style='font-size: 11px; color: {style['text_color']}; font-weight: 500; opacity: 0.8;'>
+                                {style['status']}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
         # ================================================================================================
 
         st.divider()
@@ -1999,41 +2127,72 @@ with tab_predict:
         # Hiển thị PD Stacking nổi bật ở dưới
         st.markdown("##### 🏆 KẾT QUẢ DỰ BÁO CUỐI CÙNG (STACKING MODEL)")
 
-        # Tạo container nổi bật cho PD Stacking
-        stacking_container = st.container()
-        with stacking_container:
+        # Tạo cột để giới hạn chiều rộng xuống 1/2
+        col_left, col_center, col_right = st.columns([1, 2, 1])
+
+        with col_center:
             # Sử dụng hàm classify_pd để lấy thông tin phân loại
             pd_classification = classify_pd(probs)
 
-            # Sử dụng markdown với style đặc biệt
+            # Sử dụng markdown với style đặc biệt - màu nhẹ nhàng hơn
             pd_value_stacking = f"{probs:.2%}" if pd.notna(probs) else "N/A"
+
+            # Tạo màu nhẹ nhàng dựa trên màu gốc
+            def get_soft_color(original_color):
+                """Chuyển màu đậm sang màu nhẹ nhàng"""
+                color_map = {
+                    '#28a745': '#d4edda',  # Green -> Light green
+                    '#5cb85c': '#e7f5e8',  # Light green -> Lighter
+                    '#ffc107': '#fff9e6',  # Yellow -> Light yellow
+                    '#fd7e14': '#ffe8d9',  # Orange -> Light orange
+                    '#dc3545': '#f8d7da',  # Red -> Light red
+                    '#6c757d': '#e2e3e5'   # Grey -> Light grey
+                }
+                return color_map.get(original_color, '#f0f0f0')
+
+            # Tạo màu text tối hơn để dễ đọc
+            def get_text_color(original_color):
+                """Chuyển màu text cho phù hợp với nền nhẹ"""
+                color_map = {
+                    '#28a745': '#155724',  # Dark green
+                    '#5cb85c': '#256029',
+                    '#ffc107': '#856404',  # Dark yellow/brown
+                    '#fd7e14': '#8b4513',  # Dark orange
+                    '#dc3545': '#721c24',  # Dark red
+                    '#6c757d': '#383d41'   # Dark grey
+                }
+                return color_map.get(original_color, '#333333')
+
+            soft_bg_color = get_soft_color(pd_classification['color'])
+            text_color = get_text_color(pd_classification['color'])
+            border_color = pd_classification['color']
 
             st.markdown(f"""
             <div style='
-                background: {pd_classification['gradient_color']};
-                border: 3px solid {pd_classification['color']};
-                border-radius: 15px;
-                padding: 30px;
+                background: {soft_bg_color};
+                border: 2px solid {border_color};
+                border-radius: 12px;
+                padding: 25px;
                 text-align: center;
-                box-shadow: 0 10px 30px rgba(255, 107, 157, 0.3);
-                margin: 20px 0;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                margin: 15px 0;
             '>
-                <div style='font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 15px;'>
-                    🏆 XÁC SUẤT VỠ NỢ (PD) - STACKING MODEL
+                <div style='font-size: 16px; font-weight: 700; color: {text_color}; margin-bottom: 12px;'>
+                    🏆 XÁC SUẤT VỠ NỢ (PD)
                 </div>
-                <div style='font-size: 48px; font-weight: 900; color: #ffffff; margin: 20px 0;'>
+                <div style='font-size: 40px; font-weight: 900; color: {text_color}; margin: 15px 0;'>
                     {pd_value_stacking}
                 </div>
-                <div style='font-size: 24px; font-weight: 700; color: #ffffff; margin: 10px 0;'>
+                <div style='font-size: 20px; font-weight: 700; color: {text_color}; margin: 8px 0;'>
                     Rating: {pd_classification['rating']}
                 </div>
-                <div style='font-size: 20px; font-weight: 600; color: #ffffff; background: rgba(0,0,0,0.1); padding: 10px; border-radius: 8px; margin: 10px 0;'>
+                <div style='font-size: 16px; font-weight: 600; color: {text_color}; background: rgba(255,255,255,0.5); padding: 8px; border-radius: 6px; margin: 8px 0;'>
                     {pd_classification['classification']} ({pd_classification['range']})
                 </div>
-                <div style='font-size: 16px; color: #ffffff; margin-top: 10px; font-style: italic;'>
+                <div style='font-size: 14px; color: {text_color}; margin-top: 8px; font-style: italic;'>
                     📊 {pd_classification['meaning']}
                 </div>
-                <div style='font-size: 14px; color: rgba(255,255,255,0.9); margin-top: 15px; font-style: italic;'>
+                <div style='font-size: 12px; color: {text_color}; opacity: 0.8; margin-top: 12px; font-style: italic;'>
                     💡 AI sử dụng kết quả này để phân tích và đề xuất quyết định tín dụng
                 </div>
             </div>
@@ -2362,11 +2521,32 @@ with tab_dashboard:
 
     st.divider()
 
-    # Nút lấy dữ liệu
-    st.markdown("### 2️⃣ Lấy dữ liệu từ AI")
-    get_data_btn = st.button("🤖 Lấy dữ liệu & Phân tích", use_container_width=True, type="primary")
+    # Khởi tạo session state cho dashboard data
+    if 'dashboard_data' not in st.session_state:
+        st.session_state['dashboard_data'] = None
+    if 'dashboard_type' not in st.session_state:
+        st.session_state['dashboard_type'] = None
 
-    # Xử lý khi người dùng bấm nút
+    # Nút lấy dữ liệu kết hợp phân tích
+    st.markdown("### 2️⃣ Lấy dữ liệu và Phân tích AI")
+    col_btn1, col_btn2 = st.columns([3, 1])
+
+    with col_btn1:
+        get_data_btn = st.button("🤖 Lấy dữ liệu, Vẽ biểu đồ & Phân tích AI", use_container_width=True, type="primary")
+
+    with col_btn2:
+        if st.session_state['dashboard_data']:
+            clear_btn = st.button("🗑️ Xóa", use_container_width=True)
+            if clear_btn:
+                st.session_state['dashboard_data'] = None
+                st.session_state['dashboard_type'] = None
+                if 'macro_analysis_result' in st.session_state:
+                    st.session_state['macro_analysis_result'] = None
+                if 'industry_analysis_result' in st.session_state:
+                    st.session_state['industry_analysis_result'] = None
+                st.rerun()
+
+    # Xử lý khi người dùng bấm nút lấy dữ liệu
     if get_data_btn:
         if not _GEMINI_OK:
             st.error("❌ Thiếu thư viện google-genai. Vui lòng cài đặt: pip install google-genai")
@@ -2382,6 +2562,33 @@ with tab_dashboard:
                     # PHÂN TÍCH VĨ MÔ
                     with st.spinner('🤖 Đang lấy dữ liệu vĩ mô từ Gemini AI...'):
                         macro_data = get_macro_data_from_ai(api_key)
+
+                    if macro_data:
+                        # Lưu vào session state
+                        st.session_state['dashboard_data'] = macro_data
+                        st.session_state['dashboard_type'] = 'macro'
+
+                        # Tự động phân tích bằng AI
+                        with st.spinner('AI đang phân tích ảnh hưởng đến quyết định cho vay...'):
+                            client = genai.Client(api_key=api_key)
+                            prompt = f"""Dựa trên dữ liệu vĩ mô sau của nền kinh tế Việt Nam:
+{macro_data}
+
+Hãy phân tích CHI TIẾT ảnh hưởng của các chỉ số này đến quyết định cho vay của ngân hàng:
+1. Rủi ro tín dụng tăng hay giảm?
+2. Nên thắt chặt hay nới lỏng tiêu chuẩn cho vay?
+3. Ngành nào nên ưu tiên cho vay, ngành nào nên hạn chế?
+4. Khuyến nghị cụ thể cho chiến lược tín dụng.
+
+Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm bullet."""
+
+                            response = client.models.generate_content(
+                                model=MODEL_NAME,
+                                contents=[{"role": "user", "parts": [{"text": prompt}]}]
+                            )
+                            st.session_state['macro_analysis_result'] = response.text
+
+                        st.rerun()
 
                     if macro_data:
                         st.success("✅ Đã lấy thành công dữ liệu vĩ mô!")
@@ -2537,41 +2744,6 @@ with tab_dashboard:
                             """)
                             st.divider()
 
-                        # Lưu dữ liệu vào session_state để giữ biểu đồ khi click button
-                        if 'macro_analysis_result' not in st.session_state:
-                            st.session_state['macro_analysis_result'] = None
-
-                        # Nút phân tích sâu
-                        st.markdown("### 🔍 Phân tích Sâu bằng AI")
-                        analyze_macro_btn = st.button("💡 Phân tích ảnh hưởng đến Quyết định Cho vay",
-                                                     use_container_width=True, type="primary", key="analyze_macro")
-
-                        if analyze_macro_btn:
-                            with st.spinner('AI đang phân tích...'):
-                                client = genai.Client(api_key=api_key)
-                                prompt = f"""Dựa trên dữ liệu vĩ mô sau của nền kinh tế Việt Nam:
-{macro_data}
-
-Hãy phân tích CHI TIẾT ảnh hưởng của các chỉ số này đến quyết định cho vay của ngân hàng:
-1. Rủi ro tín dụng tăng hay giảm?
-2. Nên thắt chặt hay nới lỏng tiêu chuẩn cho vay?
-3. Ngành nào nên ưu tiên cho vay, ngành nào nên hạn chế?
-4. Khuyến nghị cụ thể cho chiến lược tín dụng.
-
-Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm bullet."""
-
-                                response = client.models.generate_content(
-                                    model=MODEL_NAME,
-                                    contents=[{"role": "user", "parts": [{"text": prompt}]}]
-                                )
-
-                                st.session_state['macro_analysis_result'] = response.text
-
-                        # Hiển thị kết quả phân tích nếu có
-                        if st.session_state['macro_analysis_result']:
-                            st.markdown("---")
-                            st.markdown("#### 📊 Phân tích AI - Ảnh hưởng đến Quyết định Cho vay")
-                            st.success(st.session_state['macro_analysis_result'])
 
                     else:
                         st.error("⚠️ Không thể lấy dữ liệu vĩ mô từ AI.")
@@ -2580,6 +2752,35 @@ Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm 
                     # PHÂN TÍCH NGÀNH CỤ THỂ
                     with st.spinner(f'🤖 Đang lấy dữ liệu ngành "{selected_analysis}" từ Gemini AI...'):
                         industry_data = get_industry_data_from_ai(api_key, selected_analysis)
+
+                    if industry_data:
+                        # Lưu vào session state
+                        st.session_state['dashboard_data'] = industry_data
+                        st.session_state['dashboard_type'] = 'industry'
+                        st.session_state['dashboard_industry_name'] = selected_analysis
+
+                        # Tự động phân tích bằng AI
+                        with st.spinner('AI đang phân tích ảnh hưởng đến quyết định cho vay...'):
+                            client = genai.Client(api_key=api_key)
+                            prompt = f"""Dựa trên dữ liệu ngành {selected_analysis} sau:
+{industry_data}
+
+Hãy phân tích CHI TIẾT:
+1. Đánh giá tổng quan sức khỏe ngành này
+2. Rủi ro tín dụng khi cho vay doanh nghiệp trong ngành
+3. Các chỉ số đáng lo ngại và đáng mừng
+4. Khuyến nghị CHO VAY hay KHÔNG CHO VAY cho ngành này, và các điều kiện cụ thể
+5. Mức lãi suất và thời hạn cho vay phù hợp
+
+Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm bullet."""
+
+                            response = client.models.generate_content(
+                                model=MODEL_NAME,
+                                contents=[{"role": "user", "parts": [{"text": prompt}]}]
+                            )
+                            st.session_state['industry_analysis_result'] = response.text
+
+                        st.rerun()
 
                     if industry_data:
                         st.success(f"✅ Đã lấy thành công dữ liệu ngành {selected_analysis}!")
@@ -2703,45 +2904,34 @@ Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm 
                             """)
                             st.divider()
 
-                        # Lưu dữ liệu vào session_state để giữ biểu đồ khi click button
-                        if 'industry_analysis_result' not in st.session_state:
-                            st.session_state['industry_analysis_result'] = None
-
-                        # Nút phân tích sâu
-                        st.markdown("### 🔍 Phân tích Sâu bằng AI")
-                        analyze_industry_btn = st.button("💡 Phân tích ảnh hưởng đến Quyết định Cho vay",
-                                                        use_container_width=True, type="primary", key="analyze_industry")
-
-                        if analyze_industry_btn:
-                            with st.spinner('AI đang phân tích...'):
-                                client = genai.Client(api_key=api_key)
-                                prompt = f"""Dựa trên dữ liệu ngành {selected_analysis} sau:
-{industry_data}
-
-Hãy phân tích CHI TIẾT:
-1. Đánh giá tổng quan sức khỏe ngành này
-2. Rủi ro tín dụng khi cho vay doanh nghiệp trong ngành
-3. Các chỉ số đáng lo ngại và đáng mừng
-4. Khuyến nghị CHO VAY hay KHÔNG CHO VAY cho ngành này, và các điều kiện cụ thể
-5. Mức lãi suất và thời hạn cho vay phù hợp
-
-Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm bullet."""
-
-                                response = client.models.generate_content(
-                                    model=MODEL_NAME,
-                                    contents=[{"role": "user", "parts": [{"text": prompt}]}]
-                                )
-
-                                st.session_state['industry_analysis_result'] = response.text
-
-                        # Hiển thị kết quả phân tích nếu có
-                        if st.session_state['industry_analysis_result']:
-                            st.markdown("---")
-                            st.markdown("#### 📊 Phân tích AI - Quyết định Cho vay")
-                            st.success(st.session_state['industry_analysis_result'])
 
                     else:
                         st.error(f"⚠️ Không thể lấy dữ liệu ngành {selected_analysis} từ AI.")
+
+    # ================================================================================
+    # HIỂN THỊ DỮ LIỆU VÀ PHÂN TÍCH TỪ SESSION STATE (ngoài điều kiện button)
+    # ================================================================================
+    if st.session_state['dashboard_data'] is not None:
+        st.divider()
+        st.markdown("## 📊 Kết quả Phân tích")
+
+        dashboard_type = st.session_state.get('dashboard_type')
+        dashboard_data = st.session_state['dashboard_data']
+
+        if dashboard_type == 'macro':
+            # Hiển thị kết quả phân tích AI cho macro
+            if st.session_state.get('macro_analysis_result'):
+                st.success("✅ Đã hoàn thành phân tích vĩ mô!")
+                st.markdown("### 🔍 Phân tích AI - Ảnh hưởng đến Quyết định Cho vay")
+                st.info(st.session_state['macro_analysis_result'])
+
+        elif dashboard_type == 'industry':
+            # Hiển thị kết quả phân tích AI cho industry
+            if st.session_state.get('industry_analysis_result'):
+                industry_name = st.session_state.get('dashboard_industry_name', 'Ngành')
+                st.success(f"✅ Đã hoàn thành phân tích ngành {industry_name}!")
+                st.markdown("### 🔍 Phân tích AI - Quyết định Cho vay")
+                st.info(st.session_state['industry_analysis_result'])
 
 
 # ========================================
