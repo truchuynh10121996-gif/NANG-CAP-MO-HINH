@@ -2203,306 +2203,346 @@ with tab_dashboard:
                 is_macro = selected_analysis == "Tổng quan (Vĩ mô)"
 
                 if is_macro:
-        try:
-            with st.spinner('Đang đọc dữ liệu từ file...'):
-                if uploaded_gso.name.endswith('.csv'):
-                    gso_data = pd.read_csv(uploaded_gso)
-                else:
-                    gso_data = pd.read_excel(uploaded_gso)
-            st.success(f"✅ Đã tải thành công file: **{uploaded_gso.name}**")
-        except Exception as e:
-            st.error(f"❌ Lỗi khi đọc file: {e}")
+                    # PHÂN TÍCH VĨ MÔ
+                    with st.spinner('🤖 Đang lấy dữ liệu vĩ mô từ Gemini AI...'):
+                        macro_data = get_macro_data_from_ai(api_key)
 
-    # Hoặc lấy dữ liệu tự động từ Gemini AI
-    elif use_ai_data:
-        if not _GEMINI_OK:
-            st.error("❌ Thiếu thư viện google-genai. Vui lòng cài đặt: pip install google-genai")
-        else:
-            api_key = st.secrets.get("GEMINI_API_KEY")
-            if api_key:
-                with st.spinner('🤖 Đang lấy dữ liệu tài chính từ Gemini AI... (có thể mất 10-20 giây)'):
-                    gso_data = get_financial_data_from_ai(api_key)
-                    if gso_data is not None and not gso_data.empty:
-                        st.success("✅ Đã lấy thành công dữ liệu tài chính doanh nghiệp Việt Nam từ Gemini AI!")
-                        st.info("💡 **Dữ liệu được cache 30 ngày** - Sẽ tự động cập nhật vào tháng sau")
+                    if macro_data:
+                        st.success("✅ Đã lấy thành công dữ liệu vĩ mô!")
+                        st.divider()
+                        st.markdown("### 📊 DỮ LIỆU VĨ MÔ NỀN KINH TẾ VIỆT NAM")
+
+                        # Hiển thị phân tích tổng quan
+                        if 'analysis' in macro_data:
+                            with st.expander("📝 Phân tích Tổng quan", expanded=True):
+                                st.markdown(macro_data['analysis'])
+
+                        # 1. Lãi suất cho vay vs liên ngân hàng
+                        if 'lending_rate_vs_interbank' in macro_data:
+                            st.markdown("#### 💰 Lãi suất Cho vay & Liên ngân hàng")
+                            data = macro_data['lending_rate_vs_interbank']
+
+                            fig, ax = plt.subplots(figsize=(14, 6))
+                            fig.patch.set_facecolor('#fff5f7')
+                            ax.set_facecolor('#ffffff')
+
+                            ax.plot(data['quarters'], data['lending_rate'], marker='o', linewidth=2.5,
+                                   markersize=7, color='#ff6b9d', label='Lãi suất cho vay', alpha=0.9)
+                            ax.plot(data['quarters'], data['interbank_rate'], marker='s', linewidth=2.5,
+                                   markersize=7, color='#4a90e2', label='Lãi suất liên ngân hàng', alpha=0.9)
+
+                            ax.set_xlabel('Quý', fontsize=13, fontweight='600')
+                            ax.set_ylabel('Lãi suất (%)', fontsize=13, fontweight='600')
+                            ax.set_title('Lãi suất Cho vay & Liên ngân hàng theo Quý', fontsize=16, fontweight='bold', color='#c2185b')
+                            ax.grid(True, alpha=0.2, linestyle='--')
+                            ax.legend(fontsize=11)
+                            plt.xticks(rotation=45, ha='right')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close(fig)
+
+                            st.markdown("""
+                            **💡 Phân tích**: Chênh lệch lãi suất cho vay và liên ngân hàng phản ánh mức độ rủi ro
+                            và biên lợi nhuận của ngân hàng. Xu hướng tăng/giảm ảnh hưởng đến chi phí vốn của doanh nghiệp.
+                            """)
+                            st.divider()
+
+                        # 2. Tăng trưởng GDP
+                        if 'gdp_growth' in macro_data:
+                            st.markdown("#### 📈 Tăng trưởng GDP")
+                            data = macro_data['gdp_growth']
+
+                            fig, ax = plt.subplots(figsize=(14, 6))
+                            fig.patch.set_facecolor('#fff5f7')
+                            ax.set_facecolor('#ffffff')
+
+                            ax.bar(data['quarters'], data['growth_rate'], color='#50c878', alpha=0.8, edgecolor='white', linewidth=1.5)
+                            ax.axhline(y=0, color='red', linestyle='--', linewidth=1)
+
+                            ax.set_xlabel('Quý', fontsize=13, fontweight='600')
+                            ax.set_ylabel('Tăng trưởng GDP (%)', fontsize=13, fontweight='600')
+                            ax.set_title('Tăng trưởng GDP theo Quý', fontsize=16, fontweight='bold', color='#c2185b')
+                            ax.grid(True, alpha=0.2, linestyle='--', axis='y')
+                            plt.xticks(rotation=45, ha='right')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close(fig)
+
+                            st.markdown("""
+                            **💡 Phân tích**: GDP tăng trưởng mạnh cho thấy nền kinh tế phát triển tốt,
+                            doanh nghiệp có nhiều cơ hội kinh doanh, tăng khả năng trả nợ.
+                            """)
+                            st.divider()
+
+                        # 3. Tỷ lệ thất nghiệp
+                        if 'unemployment_rate' in macro_data:
+                            st.markdown("#### 👥 Tỷ lệ Thất nghiệp")
+                            data = macro_data['unemployment_rate']
+
+                            fig, ax = plt.subplots(figsize=(14, 6))
+                            fig.patch.set_facecolor('#fff5f7')
+                            ax.set_facecolor('#ffffff')
+
+                            ax.plot(data['years'], data['rate'], marker='o', linewidth=3,
+                                   markersize=8, color='#ffa500', alpha=0.9)
+                            ax.fill_between(data['years'], data['rate'], alpha=0.2, color='#ffa500')
+
+                            ax.set_xlabel('Năm', fontsize=13, fontweight='600')
+                            ax.set_ylabel('Tỷ lệ thất nghiệp (%)', fontsize=13, fontweight='600')
+                            ax.set_title('Tỷ lệ Thất nghiệp theo Năm', fontsize=16, fontweight='bold', color='#c2185b')
+                            ax.grid(True, alpha=0.2, linestyle='--')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close(fig)
+
+                            st.markdown("""
+                            **💡 Phân tích**: Tỷ lệ thất nghiệp thấp cho thấy thị trường lao động tốt,
+                            thu nhập ổn định, giảm rủi ro tín dụng cho cả doanh nghiệp và cá nhân.
+                            """)
+                            st.divider()
+
+                        # 4. Tỷ lệ nợ xấu
+                        if 'npl_ratio' in macro_data:
+                            st.markdown("#### ⚠️ Tỷ lệ Nợ xấu & Vỡ nợ")
+                            data = macro_data['npl_ratio']
+
+                            fig, ax = plt.subplots(figsize=(14, 6))
+                            fig.patch.set_facecolor('#fff5f7')
+                            ax.set_facecolor('#ffffff')
+
+                            ax.plot(data['quarters'], data['npl_rate'], marker='o', linewidth=2.5,
+                                   markersize=7, color='#dc3545', label='Tỷ lệ nợ xấu', alpha=0.9)
+                            ax.plot(data['quarters'], data['default_rate'], marker='s', linewidth=2.5,
+                                   markersize=7, color='#ff6b9d', label='Tỷ lệ vỡ nợ', alpha=0.9)
+
+                            ax.set_xlabel('Quý', fontsize=13, fontweight='600')
+                            ax.set_ylabel('Tỷ lệ (%)', fontsize=13, fontweight='600')
+                            ax.set_title('Tỷ lệ Nợ xấu & Vỡ nợ Hệ thống Ngân hàng VN', fontsize=16, fontweight='bold', color='#c2185b')
+                            ax.grid(True, alpha=0.2, linestyle='--')
+                            ax.legend(fontsize=11)
+                            plt.xticks(rotation=45, ha='right')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close(fig)
+
+                            st.markdown("""
+                            **💡 Phân tích**: Tỷ lệ nợ xấu và vỡ nợ cao cảnh báo rủi ro tín dụng gia tăng trong hệ thống,
+                            cần thắt chặt tiêu chuẩn cho vay và tăng cường thẩm định.
+                            """)
+                            st.divider()
+
+                        # 5. Chỉ số căng thẳng tài chính
+                        if 'financial_stress_index' in macro_data:
+                            st.markdown("#### 📉 Chỉ số Căng thẳng Tài chính (FSI)")
+                            data = macro_data['financial_stress_index']
+
+                            fig, ax = plt.subplots(figsize=(14, 6))
+                            fig.patch.set_facecolor('#fff5f7')
+                            ax.set_facecolor('#ffffff')
+
+                            colors = ['#28a745' if x < 0.5 else '#ffc107' if x < 0.7 else '#dc3545' for x in data['fsi']]
+                            ax.bar(data['months'], data['fsi'], color=colors, alpha=0.8, edgecolor='white', linewidth=1.5)
+                            ax.axhline(y=0.5, color='orange', linestyle='--', linewidth=1, label='Ngưỡng cảnh báo')
+                            ax.axhline(y=0.7, color='red', linestyle='--', linewidth=1, label='Ngưỡng nguy hiểm')
+
+                            ax.set_xlabel('Tháng', fontsize=13, fontweight='600')
+                            ax.set_ylabel('FSI', fontsize=13, fontweight='600')
+                            ax.set_title('Chỉ số Căng thẳng Tài chính theo Tháng', fontsize=16, fontweight='bold', color='#c2185b')
+                            ax.grid(True, alpha=0.2, linestyle='--', axis='y')
+                            ax.legend(fontsize=11)
+                            plt.xticks(rotation=45, ha='right')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close(fig)
+
+                            st.markdown("""
+                            **💡 Phân tích**: FSI đo lường mức độ căng thẳng trong hệ thống tài chính.
+                            FSI cao (>0.7) cảnh báo khủng hoảng, cần thận trọng khi cho vay.
+                            """)
+                            st.divider()
+
+                        # Nút phân tích sâu
+                        st.markdown("### 🔍 Phân tích Sâu bằng AI")
+                        if st.button("💡 Phân tích ảnh hưởng đến Quyết định Cho vay", use_container_width=True, type="primary"):
+                            with st.spinner('AI đang phân tích...'):
+                                client = genai.Client(api_key=api_key)
+                                prompt = f"""Dựa trên dữ liệu vĩ mô sau của nền kinh tế Việt Nam:
+{macro_data}
+
+Hãy phân tích CHI TIẾT ảnh hưởng của các chỉ số này đến quyết định cho vay của ngân hàng:
+1. Rủi ro tín dụng tăng hay giảm?
+2. Nên thắt chặt hay nới lỏng tiêu chuẩn cho vay?
+3. Ngành nào nên ưu tiên cho vay, ngành nào nên hạn chế?
+4. Khuyến nghị cụ thể cho chiến lược tín dụng.
+
+Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm bullet."""
+
+                                response = client.models.generate_content(
+                                    model=MODEL_NAME,
+                                    contents=[{"role": "user", "parts": [{"text": prompt}]}]
+                                )
+
+                                st.markdown("#### 📊 Phân tích AI - Ảnh hưởng đến Quyết định Cho vay")
+                                st.markdown(response.text)
+
                     else:
-                        st.warning("⚠️ Không thể lấy dữ liệu từ AI. Vui lòng thử lại hoặc sử dụng dữ liệu mẫu.")
-            else:
-                st.error("❌ **Lỗi Khóa API**: Không tìm thấy GEMINI_API_KEY trong Streamlit Secrets.")
+                        st.error("⚠️ Không thể lấy dữ liệu vĩ mô từ AI.")
 
-    # Hoặc sử dụng dữ liệu mẫu
-    elif use_sample:
-        st.info("📊 Đang sử dụng dữ liệu mẫu từ GSO (Demo)")
-        # Tạo dữ liệu mẫu (giả lập dữ liệu thực từ GSO)
-        quarters = [
-            'Q1-2021', 'Q2-2021', 'Q3-2021', 'Q4-2021',
-            'Q1-2022', 'Q2-2022', 'Q3-2022', 'Q4-2022',
-            'Q1-2023', 'Q2-2023', 'Q3-2023', 'Q4-2023',
-            'Q1-2024', 'Q2-2024', 'Q3-2024'
-        ]
-
-        # Dữ liệu giả lập (xu hướng tăng trưởng)
-        np.random.seed(42)
-        base_revenue = 5000
-        base_assets = 8000
-        base_profit = 500
-        base_debt = 3500
-
-        revenues = [base_revenue + i*150 + np.random.randint(-100, 200) for i in range(len(quarters))]
-        assets = [base_assets + i*200 + np.random.randint(-150, 250) for i in range(len(quarters))]
-        profits = [base_profit + i*30 + np.random.randint(-50, 80) for i in range(len(quarters))]
-        debts = [base_debt + i*80 + np.random.randint(-100, 150) for i in range(len(quarters))]
-        equity = [assets[i] - debts[i] for i in range(len(quarters))]
-
-        gso_data = pd.DataFrame({
-            'Quý': quarters,
-            'Doanh thu (tỷ VNĐ)': revenues,
-            'Tổng tài sản (tỷ VNĐ)': assets,
-            'Lợi nhuận (tỷ VNĐ)': profits,
-            'Nợ phải trả (tỷ VNĐ)': debts,
-            'VCSH (tỷ VNĐ)': equity
-        })
-
-    # Hiển thị và phân tích dữ liệu nếu có
-    if gso_data is not None:
-        st.divider()
-        st.markdown("### 📈 Dữ liệu và Phân tích")
-
-        # Hiển thị dữ liệu thô
-        with st.expander("🔍 Xem Dữ liệu Thô"):
-            st.dataframe(gso_data, use_container_width=True)
-
-            # Thống kê mô tả
-            st.markdown("#### Thống kê Mô tả")
-            st.dataframe(gso_data.describe(), use_container_width=True)
-
-        st.divider()
-
-        # Phần trực quan hóa
-        st.markdown("### 📊 Trực Quan Hóa Xu Hướng Tài Chính")
-
-        # Kiểm tra các cột cần thiết
-        required_cols = ['Quý', 'Doanh thu (tỷ VNĐ)', 'Tổng tài sản (tỷ VNĐ)']
-        missing_cols = [col for col in required_cols if col not in gso_data.columns]
-
-        if missing_cols:
-            st.warning(f"⚠️ File dữ liệu thiếu các cột: {', '.join(missing_cols)}. Vui lòng đảm bảo file có đủ các cột yêu cầu.")
-        else:
-            # Biểu đồ 1: Xu hướng Doanh thu theo quý
-            st.markdown("#### 💰 Xu hướng Doanh thu theo Quý")
-            fig1, ax1 = plt.subplots(figsize=(14, 6))
-            fig1.patch.set_facecolor('#fff5f7')
-            ax1.set_facecolor('#ffffff')
-
-            # Vẽ đường xu hướng doanh thu
-            ax1.plot(gso_data['Quý'], gso_data['Doanh thu (tỷ VNĐ)'],
-                    marker='o', linewidth=3, markersize=8, color='#ff6b9d',
-                    label='Doanh thu', linestyle='-', alpha=0.9)
-
-            # Fill area under curve
-            ax1.fill_between(gso_data['Quý'], gso_data['Doanh thu (tỷ VNĐ)'],
-                            alpha=0.2, color='#ffb3c6')
-
-            # Styling
-            ax1.set_xlabel('Quý', fontsize=13, fontweight='600', color='#4a5568')
-            ax1.set_ylabel('Doanh thu (tỷ VNĐ)', fontsize=13, fontweight='600', color='#4a5568')
-            ax1.set_title('Xu hướng Doanh thu Doanh nghiệp Việt Nam theo Quý',
-                         fontsize=16, fontweight='bold', color='#c2185b', pad=20)
-            ax1.grid(True, alpha=0.2, linestyle='--', linewidth=0.8, color='#ff6b9d')
-            ax1.legend(fontsize=11, frameon=True, shadow=True)
-
-            # Xoay labels trục x
-            plt.xticks(rotation=45, ha='right')
-
-            # Remove top and right spines
-            ax1.spines['top'].set_visible(False)
-            ax1.spines['right'].set_visible(False)
-            ax1.spines['left'].set_color('#d0d0d0')
-            ax1.spines['bottom'].set_color('#d0d0d0')
-
-            plt.tight_layout()
-            st.pyplot(fig1)
-            plt.close(fig1)
-
-            st.divider()
-
-            # Biểu đồ 2: So sánh Doanh thu và Tổng tài sản
-            st.markdown("#### 🏢 So sánh Doanh thu và Tổng Tài sản")
-            fig2, ax2 = plt.subplots(figsize=(14, 6))
-            fig2.patch.set_facecolor('#fff5f7')
-            ax2.set_facecolor('#ffffff')
-
-            # Vẽ 2 đường xu hướng
-            ax2.plot(gso_data['Quý'], gso_data['Doanh thu (tỷ VNĐ)'],
-                    marker='o', linewidth=2.5, markersize=7, color='#ff6b9d',
-                    label='Doanh thu', linestyle='-', alpha=0.9)
-
-            ax2.plot(gso_data['Quý'], gso_data['Tổng tài sản (tỷ VNĐ)'],
-                    marker='s', linewidth=2.5, markersize=7, color='#4a90e2',
-                    label='Tổng tài sản', linestyle='-', alpha=0.9)
-
-            # Styling
-            ax2.set_xlabel('Quý', fontsize=13, fontweight='600', color='#4a5568')
-            ax2.set_ylabel('Giá trị (tỷ VNĐ)', fontsize=13, fontweight='600', color='#4a5568')
-            ax2.set_title('So sánh Doanh thu và Tổng Tài sản theo Quý',
-                         fontsize=16, fontweight='bold', color='#c2185b', pad=20)
-            ax2.grid(True, alpha=0.2, linestyle='--', linewidth=0.8, color='#ff6b9d')
-            ax2.legend(fontsize=11, frameon=True, shadow=True, loc='upper left')
-
-            plt.xticks(rotation=45, ha='right')
-
-            ax2.spines['top'].set_visible(False)
-            ax2.spines['right'].set_visible(False)
-            ax2.spines['left'].set_color('#d0d0d0')
-            ax2.spines['bottom'].set_color('#d0d0d0')
-
-            plt.tight_layout()
-            st.pyplot(fig2)
-            plt.close(fig2)
-
-            st.divider()
-
-            # Biểu đồ 3: Biểu đồ cột so sánh các chỉ số (nếu có đủ cột)
-            optional_cols = ['Lợi nhuận (tỷ VNĐ)', 'Nợ phải trả (tỷ VNĐ)', 'VCSH (tỷ VNĐ)']
-            available_optional = [col for col in optional_cols if col in gso_data.columns]
-
-            if available_optional:
-                st.markdown("#### 📊 Phân tích Chi tiết các Chỉ số Tài chính")
-
-                # Chọn quý để so sánh
-                selected_quarters = st.multiselect(
-                    "🔍 Chọn các quý để so sánh:",
-                    options=gso_data['Quý'].tolist(),
-                    default=gso_data['Quý'].tolist()[-4:],  # Mặc định 4 quý gần nhất
-                    key="quarter_selector"
-                )
-
-                if selected_quarters:
-                    filtered_data = gso_data[gso_data['Quý'].isin(selected_quarters)]
-
-                    # Tạo biểu đồ cột nhóm
-                    fig3, ax3 = plt.subplots(figsize=(14, 7))
-                    fig3.patch.set_facecolor('#fff5f7')
-                    ax3.set_facecolor('#ffffff')
-
-                    # Số lượng quý và chỉ số
-                    n_quarters = len(selected_quarters)
-                    n_indicators = len(available_optional)
-
-                    # Vị trí các cột
-                    x = np.arange(n_quarters)
-                    width = 0.25  # Độ rộng mỗi cột
-
-                    # Màu sắc cho các chỉ số
-                    colors = ['#ff6b9d', '#4a90e2', '#50c878']
-
-                    # Vẽ các cột
-                    for i, col in enumerate(available_optional):
-                        offset = (i - n_indicators/2 + 0.5) * width
-                        ax3.bar(x + offset, filtered_data[col], width,
-                               label=col.replace(' (tỷ VNĐ)', ''),
-                               color=colors[i % len(colors)], alpha=0.8,
-                               edgecolor='white', linewidth=1.5)
-
-                    # Styling
-                    ax3.set_xlabel('Quý', fontsize=13, fontweight='600', color='#4a5568')
-                    ax3.set_ylabel('Giá trị (tỷ VNĐ)', fontsize=13, fontweight='600', color='#4a5568')
-                    ax3.set_title('So sánh các Chỉ số Tài chính theo Quý',
-                                 fontsize=16, fontweight='bold', color='#c2185b', pad=20)
-                    ax3.set_xticks(x)
-                    ax3.set_xticklabels(selected_quarters, rotation=45, ha='right')
-                    ax3.legend(fontsize=11, frameon=True, shadow=True)
-                    ax3.grid(True, alpha=0.2, linestyle='--', linewidth=0.8, color='#ff6b9d', axis='y')
-
-                    ax3.spines['top'].set_visible(False)
-                    ax3.spines['right'].set_visible(False)
-                    ax3.spines['left'].set_color('#d0d0d0')
-                    ax3.spines['bottom'].set_color('#d0d0d0')
-
-                    plt.tight_layout()
-                    st.pyplot(fig3)
-                    plt.close(fig3)
-
-            st.divider()
-
-            # Phần thống kê tổng quan
-            st.markdown("### 📈 Thống Kê Tổng Quan")
-
-            metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
-
-            with metric_col1:
-                avg_revenue = gso_data['Doanh thu (tỷ VNĐ)'].mean()
-                st.metric(
-                    label="Doanh thu TB",
-                    value=f"{avg_revenue:,.0f} tỷ",
-                    delta=f"{gso_data['Doanh thu (tỷ VNĐ)'].iloc[-1] - gso_data['Doanh thu (tỷ VNĐ)'].iloc[0]:,.0f} tỷ",
-                    delta_color="normal"
-                )
-
-            with metric_col2:
-                avg_assets = gso_data['Tổng tài sản (tỷ VNĐ)'].mean()
-                st.metric(
-                    label="Tổng TS TB",
-                    value=f"{avg_assets:,.0f} tỷ",
-                    delta=f"{gso_data['Tổng tài sản (tỷ VNĐ)'].iloc[-1] - gso_data['Tổng tài sản (tỷ VNĐ)'].iloc[0]:,.0f} tỷ",
-                    delta_color="normal"
-                )
-
-            if 'Lợi nhuận (tỷ VNĐ)' in gso_data.columns:
-                with metric_col3:
-                    avg_profit = gso_data['Lợi nhuận (tỷ VNĐ)'].mean()
-                    st.metric(
-                        label="Lợi nhuận TB",
-                        value=f"{avg_profit:,.0f} tỷ",
-                        delta=f"{gso_data['Lợi nhuận (tỷ VNĐ)'].iloc[-1] - gso_data['Lợi nhuận (tỷ VNĐ)'].iloc[0]:,.0f} tỷ",
-                        delta_color="normal"
-                    )
-
-            if 'VCSH (tỷ VNĐ)' in gso_data.columns:
-                with metric_col4:
-                    avg_equity = gso_data['VCSH (tỷ VNĐ)'].mean()
-                    st.metric(
-                        label="VCSH TB",
-                        value=f"{avg_equity:,.0f} tỷ",
-                        delta=f"{gso_data['VCSH (tỷ VNĐ)'].iloc[-1] - gso_data['VCSH (tỷ VNĐ)'].iloc[0]:,.0f} tỷ",
-                        delta_color="normal"
-                    )
-
-            st.divider()
-
-            # Kết luận và Insights
-            st.markdown("### 💡 Nhận xét và Insights")
-
-            insights_container = st.container(border=True)
-            with insights_container:
-                # Tính toán tốc độ tăng trưởng
-                revenue_growth = ((gso_data['Doanh thu (tỷ VNĐ)'].iloc[-1] - gso_data['Doanh thu (tỷ VNĐ)'].iloc[0]) / gso_data['Doanh thu (tỷ VNĐ)'].iloc[0]) * 100
-                assets_growth = ((gso_data['Tổng tài sản (tỷ VNĐ)'].iloc[-1] - gso_data['Tổng tài sản (tỷ VNĐ)'].iloc[0]) / gso_data['Tổng tài sản (tỷ VNĐ)'].iloc[0]) * 100
-
-                st.markdown(f"""
-                **Xu hướng Tăng trưởng:**
-                - 📈 **Doanh thu**: Tăng trưởng **{revenue_growth:.1f}%** từ quý đầu đến quý cuối
-                - 🏢 **Tổng tài sản**: Tăng trưởng **{assets_growth:.1f}%** từ quý đầu đến quý cuối
-
-                **Đánh giá:**
-                """)
-
-                if revenue_growth > 10:
-                    st.success("✅ Doanh nghiệp có xu hướng tăng trưởng doanh thu tốt (>10%)")
-                elif revenue_growth > 0:
-                    st.info("💡 Doanh nghiệp có tăng trưởng doanh thu nhẹ")
                 else:
-                    st.warning("⚠️ Doanh nghiệp có xu hướng giảm doanh thu, cần xem xét kỹ")
+                    # PHÂN TÍCH NGÀNH CỤ THỂ
+                    with st.spinner(f'🤖 Đang lấy dữ liệu ngành "{selected_analysis}" từ Gemini AI...'):
+                        industry_data = get_industry_data_from_ai(api_key, selected_analysis)
 
-                if assets_growth > 15:
-                    st.success("✅ Quy mô tài sản tăng trưởng mạnh (>15%)")
-                elif assets_growth > 0:
-                    st.info("💡 Quy mô tài sản có tăng trưởng")
-                else:
-                    st.warning("⚠️ Quy mô tài sản giảm, cần phân tích nguyên nhân")
+                    if industry_data:
+                        st.success(f"✅ Đã lấy thành công dữ liệu ngành {selected_analysis}!")
+                        st.divider()
+                        st.markdown(f"### 📊 DỮ LIỆU NGÀNH: {selected_analysis.upper()}")
 
-    else:
-        st.info("💡 Vui lòng tải lên file dữ liệu GSO hoặc sử dụng dữ liệu mẫu để xem phân tích.")
+                        # Hiển thị phân tích sơ bộ
+                        if 'analysis' in industry_data:
+                            with st.expander("📝 Phân tích Sơ bộ", expanded=True):
+                                st.markdown(industry_data['analysis'])
+
+                        # 1. Tốc độ tăng trưởng doanh thu
+                        if 'revenue_growth_quarterly' in industry_data:
+                            st.markdown("#### 💰 Tốc độ Tăng trưởng Doanh thu")
+                            data = industry_data['revenue_growth_quarterly']
+
+                            fig, ax = plt.subplots(figsize=(14, 6))
+                            fig.patch.set_facecolor('#fff5f7')
+                            ax.set_facecolor('#ffffff')
+
+                            ax.plot(data['quarters'], data['growth_rate'], marker='o', linewidth=3,
+                                   markersize=8, color='#ff6b9d', alpha=0.9)
+                            ax.fill_between(data['quarters'], data['growth_rate'], alpha=0.2, color='#ffb3c6')
+                            ax.axhline(y=0, color='red', linestyle='--', linewidth=1)
+
+                            ax.set_xlabel('Quý', fontsize=13, fontweight='600')
+                            ax.set_ylabel('Tăng trưởng (%)', fontsize=13, fontweight='600')
+                            ax.set_title(f'Tốc độ Tăng trưởng Doanh thu - {selected_analysis}', fontsize=16, fontweight='bold', color='#c2185b')
+                            ax.grid(True, alpha=0.2, linestyle='--')
+                            plt.xticks(rotation=45, ha='right')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close(fig)
+
+                            st.markdown("""
+                            **💡 Phân tích**: Tăng trưởng doanh thu dương cho thấy ngành đang phát triển,
+                            doanh nghiệp trong ngành có khả năng trả nợ tốt hơn.
+                            """)
+                            st.divider()
+
+                        # 2. Biên lợi nhuận gộp và ròng
+                        st.markdown("#### 📊 Biên Lợi nhuận Trung bình Ngành")
+                        col1, col2, col3 = st.columns(3)
+
+                        with col1:
+                            if 'avg_gross_margin_3y' in industry_data:
+                                st.metric("Biên LN Gộp TB (3 năm)", f"{industry_data['avg_gross_margin_3y']:.1f}%")
+
+                        with col2:
+                            if 'avg_net_profit_margin' in industry_data:
+                                st.metric("Biên LN Ròng TB", f"{industry_data['avg_net_profit_margin']:.1f}%")
+
+                        with col3:
+                            if 'avg_debt_to_equity' in industry_data:
+                                st.metric("Tỷ lệ Nợ/VCSH TB", f"{industry_data['avg_debt_to_equity']:.2f}")
+
+                        st.markdown("""
+                        **💡 Phân tích**: Biên lợi nhuận cao cho thấy ngành có khả năng sinh lời tốt.
+                        Tỷ lệ nợ/VCSH thấp (<1.5) là dấu hiệu tốt về cấu trúc vốn.
+                        """)
+                        st.divider()
+
+                        # 3. PMI ngành
+                        if 'pmi_monthly' in industry_data:
+                            st.markdown("#### 📈 Chỉ số PMI Ngành")
+                            data = industry_data['pmi_monthly']
+
+                            fig, ax = plt.subplots(figsize=(14, 6))
+                            fig.patch.set_facecolor('#fff5f7')
+                            ax.set_facecolor('#ffffff')
+
+                            colors = ['#28a745' if x >= 50 else '#dc3545' for x in data['pmi']]
+                            ax.bar(data['months'], data['pmi'], color=colors, alpha=0.8, edgecolor='white', linewidth=1.5)
+                            ax.axhline(y=50, color='black', linestyle='--', linewidth=2, label='Ngưỡng 50')
+
+                            ax.set_xlabel('Tháng', fontsize=13, fontweight='600')
+                            ax.set_ylabel('PMI', fontsize=13, fontweight='600')
+                            ax.set_title(f'Chỉ số PMI - {selected_analysis}', fontsize=16, fontweight='bold', color='#c2185b')
+                            ax.grid(True, alpha=0.2, linestyle='--', axis='y')
+                            ax.legend(fontsize=11)
+                            plt.xticks(rotation=45, ha='right')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close(fig)
+
+                            st.markdown("""
+                            **💡 Phân tích**: PMI >50 cho thấy ngành đang mở rộng, <50 cho thấy co hẹp.
+                            Xu hướng PMI giúp dự đoán sức khỏe ngành trong tương lai.
+                            """)
+                            st.divider()
+
+                        # 4. Doanh nghiệp mới vs giải thể
+                        if 'new_vs_closed_businesses' in industry_data:
+                            st.markdown("#### 🏢 Doanh nghiệp Đăng ký Mới vs Giải thể")
+                            data = industry_data['new_vs_closed_businesses']
+
+                            fig, ax = plt.subplots(figsize=(14, 6))
+                            fig.patch.set_facecolor('#fff5f7')
+                            ax.set_facecolor('#ffffff')
+
+                            x = np.arange(len(data['quarters']))
+                            width = 0.35
+
+                            ax.bar(x - width/2, data['new'], width, label='Đăng ký mới', color='#28a745', alpha=0.8)
+                            ax.bar(x + width/2, data['closed'], width, label='Giải thể', color='#dc3545', alpha=0.8)
+
+                            ax.set_xlabel('Quý', fontsize=13, fontweight='600')
+                            ax.set_ylabel('Số lượng DN', fontsize=13, fontweight='600')
+                            ax.set_title(f'DN Đăng ký Mới vs Giải thể - {selected_analysis}', fontsize=16, fontweight='bold', color='#c2185b')
+                            ax.set_xticks(x)
+                            ax.set_xticklabels(data['quarters'], rotation=45, ha='right')
+                            ax.legend(fontsize=11)
+                            ax.grid(True, alpha=0.2, linestyle='--', axis='y')
+                            plt.tight_layout()
+                            st.pyplot(fig)
+                            plt.close(fig)
+
+                            st.markdown("""
+                            **💡 Phân tích**: Số DN đăng ký mới > Giải thể cho thấy ngành đang hấp dẫn.
+                            Tỷ lệ giải thể cao cảnh báo rủi ro ngành đang gặp khó khăn.
+                            """)
+                            st.divider()
+
+                        # Nút phân tích sâu
+                        st.markdown("### 🔍 Phân tích Sâu bằng AI")
+                        if st.button("💡 Phân tích ảnh hưởng đến Quyết định Cho vay", use_container_width=True, type="primary"):
+                            with st.spinner('AI đang phân tích...'):
+                                client = genai.Client(api_key=api_key)
+                                prompt = f"""Dựa trên dữ liệu ngành {selected_analysis} sau:
+{industry_data}
+
+Hãy phân tích CHI TIẾT:
+1. Đánh giá tổng quan sức khỏe ngành này
+2. Rủi ro tín dụng khi cho vay doanh nghiệp trong ngành
+3. Các chỉ số đáng lo ngại và đáng mừng
+4. Khuyến nghị CHO VAY hay KHÔNG CHO VAY cho ngành này, và các điều kiện cụ thể
+5. Mức lãi suất và thời hạn cho vay phù hợp
+
+Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm bullet."""
+
+                                response = client.models.generate_content(
+                                    model=MODEL_NAME,
+                                    contents=[{"role": "user", "parts": [{"text": prompt}]}]
+                                )
+
+                                st.markdown("#### 📊 Phân tích AI - Quyết định Cho vay")
+                                st.markdown(response.text)
+
+                    else:
+                        st.error(f"⚠️ Không thể lấy dữ liệu ngành {selected_analysis} từ AI.")
+
 
 # ========================================
 # TAB: TIN TỨC TÀI CHÍNH
