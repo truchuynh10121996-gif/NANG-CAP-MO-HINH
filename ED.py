@@ -22,6 +22,7 @@ from sklearn.metrics import (
 )
 from xgboost import XGBClassifier
 import time
+import hashlib
 
 # Thư viện RSS Feed
 try:
@@ -1201,6 +1202,7 @@ def _get_row_vals(df: pd.DataFrame, aliases: list[str]):
 
     return to_num(row[prev_col]), to_num(row[cur_col])
 
+@st.cache_data(show_spinner="Đang tính toán chỉ số tài chính...")
 def compute_ratios_from_three_sheets(xlsx_file) -> pd.DataFrame:
     """Đọc 3 sheet CDKT/BCTN/LCTT và tính X1..X14 theo yêu cầu."""
     bs = pd.read_excel(xlsx_file, sheet_name="CDKT", engine="openpyxl")
@@ -1362,7 +1364,35 @@ uploaded_file = st.sidebar.file_uploader("📂 Tải CSV Dữ liệu Huấn luy�
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file, encoding='latin-1')
     MODEL_COLS = [f"X_{i}" for i in range(1, 15)]
-    
+
+# ================================================================================================
+# CÀI ĐẶT TỐI ƯU HIỆU SUẤT (SIDEBAR)
+# ================================================================================================
+st.sidebar.divider()
+st.sidebar.markdown("### ⚙️ Cài đặt Hiệu suất")
+performance_mode = st.sidebar.selectbox(
+    "Chế độ hiệu suất:",
+    ["⚡ Nhanh (Giảm chất lượng biểu đồ)", "🎨 Cân bằng (Khuyến nghị)", "🖼️ Chất lượng cao (Chậm hơn)"],
+    index=1,
+    help="Chọn chế độ phù hợp với thiết bị của bạn"
+)
+
+# Xác định cấu hình dựa trên mode
+if "Nhanh" in performance_mode:
+    CHART_DPI = 80
+    CHART_FIGSIZE_SCALE = 0.7
+    ENABLE_ANIMATIONS = False
+elif "Chất lượng cao" in performance_mode:
+    CHART_DPI = 150
+    CHART_FIGSIZE_SCALE = 1.0
+    ENABLE_ANIMATIONS = True
+else:  # Cân bằng
+    CHART_DPI = 100
+    CHART_FIGSIZE_SCALE = 0.85
+    ENABLE_ANIMATIONS = True
+
+st.sidebar.caption(f"📊 DPI biểu đồ: {CHART_DPI} | Scale: {CHART_FIGSIZE_SCALE:.0%}")
+
 # Định nghĩa các Tabs
 # ------------------------------------------------------------------------------------------------
 # THAY ĐỔI 4: Vị trí Tabs được giữ nguyên, CSS mới sẽ đảm bảo Tabs có màu
@@ -1419,68 +1449,93 @@ if missing:
 
 
 # ================================================================================================
+# HÀM TRAIN MODEL VỚI CACHE (TỐI ƯU HIỆU SUẤT)
+# ================================================================================================
+@st.cache_resource(show_spinner="🚀 Đang huấn luyện mô hình Stacking Ensemble...")
+def train_models(X_train, y_train, X_test, y_test):
+    """
+    Train stacking model và 3 base models với caching để tối ưu hiệu suất.
+    """
+    # Định nghĩa 3 Base Models
+    model_logistic = LogisticRegression(random_state=42, max_iter=1000, class_weight="balanced", solver="lbfgs")
+    model_rf = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=10, class_weight="balanced")
+    model_xgb = XGBClassifier(n_estimators=100, random_state=42, max_depth=6, learning_rate=0.1,
+                              use_label_encoder=False, eval_metric='logloss')
+
+    # Tạo StackingClassifier
+    estimators = [
+        ('logistic', model_logistic),
+        ('random_forest', model_rf),
+        ('xgboost', model_xgb)
+    ]
+    model = StackingClassifier(
+        estimators=estimators,
+        final_estimator=LogisticRegression(random_state=42, max_iter=1000),
+        cv=5,
+        stack_method='predict_proba',
+        n_jobs=-1
+    )
+
+    # Train stacking model
+    model.fit(X_train, y_train)
+
+    # Train riêng 3 base models
+    model_logistic.fit(X_train, y_train)
+    model_rf.fit(X_train, y_train)
+    model_xgb.fit(X_train, y_train)
+
+    return model, model_logistic, model_rf, model_xgb
+
+@st.cache_data(show_spinner=False)
+def calculate_metrics(_model, _model_logistic, _model_rf, _model_xgb, X_train, y_train, X_test, y_test):
+    """
+    Tính toán metrics với caching (tham số model dùng _ để không hash).
+    """
+    # Dự báo cho Stacking Model
+    y_pred_in = _model.predict(X_train)
+    y_proba_in = _model.predict_proba(X_train)[:, 1]
+    y_pred_out = _model.predict(X_test)
+    y_proba_out = _model.predict_proba(X_test)[:, 1]
+
+    # Dự báo cho 3 base models
+    y_proba_logistic_out = _model_logistic.predict_proba(X_test)[:, 1]
+    y_proba_rf_out = _model_rf.predict_proba(X_test)[:, 1]
+    y_proba_xgb_out = _model_xgb.predict_proba(X_test)[:, 1]
+
+    metrics_in = {
+        "accuracy_in": accuracy_score(y_train, y_pred_in),
+        "precision_in": precision_score(y_train, y_pred_in, zero_division=0),
+        "recall_in": recall_score(y_train, y_pred_in, zero_division=0),
+        "f1_in": f1_score(y_train, y_pred_in, zero_division=0),
+        "auc_in": roc_auc_score(y_train, y_proba_in),
+    }
+    metrics_out = {
+        "accuracy_out": accuracy_score(y_test, y_pred_out),
+        "precision_out": precision_score(y_test, y_pred_out, zero_division=0),
+        "recall_out": recall_score(y_test, y_pred_out, zero_division=0),
+        "f1_out": f1_score(y_test, y_pred_out, zero_division=0),
+        "auc_out": roc_auc_score(y_test, y_proba_out),
+    }
+
+    return metrics_in, metrics_out, y_proba_logistic_out, y_proba_rf_out, y_proba_xgb_out
+
+# ================================================================================================
 # NÂNG CẤP MÔ HÌNH: Từ Logistic đơn lẻ lên StackingClassifier với 3 base models
 # ================================================================================================
-X = df[MODEL_COLS] # Chỉ lấy các cột X_1..X_14
+X = df[MODEL_COLS]
 y = df['default'].astype(int)
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 
-# Định nghĩa 3 Base Models
-model_logistic = LogisticRegression(random_state=42, max_iter=1000, class_weight="balanced", solver="lbfgs")
-model_rf = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=10, class_weight="balanced")
-model_xgb = XGBClassifier(n_estimators=100, random_state=42, max_depth=6, learning_rate=0.1,
-                          use_label_encoder=False, eval_metric='logloss')
+# Train models với caching
+model, model_logistic, model_rf, model_xgb = train_models(X_train, y_train, X_test, y_test)
 
-# Tạo StackingClassifier với LogisticRegression làm meta-model
-estimators = [
-    ('logistic', model_logistic),
-    ('random_forest', model_rf),
-    ('xgboost', model_xgb)
-]
-model = StackingClassifier(
-    estimators=estimators,
-    final_estimator=LogisticRegression(random_state=42, max_iter=1000),
-    cv=5,  # Cross-validation 5-fold
-    stack_method='predict_proba',  # Dùng probability để stack
-    n_jobs=-1  # Sử dụng tất cả CPU cores
+# Tính metrics với caching
+metrics_in, metrics_out, y_proba_logistic_out, y_proba_rf_out, y_proba_xgb_out = calculate_metrics(
+    model, model_logistic, model_rf, model_xgb, X_train, y_train, X_test, y_test
 )
-
-# Train tất cả models
-model.fit(X_train, y_train)
-
-# Dự báo & đánh giá cho Stacking Model (Model chính)
-y_pred_in = model.predict(X_train)
-y_proba_in = model.predict_proba(X_train)[:, 1]
-y_pred_out = model.predict(X_test)
-y_proba_out = model.predict_proba(X_test)[:, 1]
-
-# Train riêng 3 base models để lấy PD riêng biệt (để hiển thị)
-model_logistic.fit(X_train, y_train)
-model_rf.fit(X_train, y_train)
-model_xgb.fit(X_train, y_train)
-
-# Tính PD từ 3 base models trên test set
-y_proba_logistic_out = model_logistic.predict_proba(X_test)[:, 1]
-y_proba_rf_out = model_rf.predict_proba(X_test)[:, 1]
-y_proba_xgb_out = model_xgb.predict_proba(X_test)[:, 1]
-
-metrics_in = {
-    "accuracy_in": accuracy_score(y_train, y_pred_in),
-    "precision_in": precision_score(y_train, y_pred_in, zero_division=0),
-    "recall_in": recall_score(y_train, y_pred_in, zero_division=0),
-    "f1_in": f1_score(y_train, y_pred_in, zero_division=0),
-    "auc_in": roc_auc_score(y_train, y_proba_in),
-}
-metrics_out = {
-    "accuracy_out": accuracy_score(y_test, y_pred_out),
-    "precision_out": precision_score(y_test, y_pred_out, zero_division=0),
-    "recall_out": recall_score(y_test, y_pred_out, zero_division=0),
-    "f1_out": f1_score(y_test, y_pred_out, zero_division=0),
-    "auc_out": roc_auc_score(y_test, y_proba_out),
-}
 
 # --- CÁC PHẦN UI DỰA TRÊN TABS ---
 
@@ -1864,8 +1919,9 @@ with tab_predict:
 
         with chart_col1:
             st.markdown("#### 📈 Biểu đồ Cột - Giá trị các Chỉ số")
-            # Tạo bar chart
-            fig_bar, ax_bar = plt.subplots(figsize=(8, 10))
+            # Tạo bar chart với figsize tối ưu
+            figsize = (int(8 * CHART_FIGSIZE_SCALE), int(10 * CHART_FIGSIZE_SCALE))
+            fig_bar, ax_bar = plt.subplots(figsize=figsize, dpi=CHART_DPI)
             fig_bar.patch.set_facecolor('#fff5f7')
             ax_bar.set_facecolor('#ffffff')
 
@@ -1902,8 +1958,9 @@ with tab_predict:
 
         with chart_col2:
             st.markdown("#### 🎯 Biểu đồ Radar - Phân tích Đa chiều")
-            # Tạo radar chart (spider chart)
-            fig_radar = plt.figure(figsize=(10, 10))
+            # Tạo radar chart với figsize tối ưu
+            figsize_radar = int(10 * CHART_FIGSIZE_SCALE)
+            fig_radar = plt.figure(figsize=(figsize_radar, figsize_radar), dpi=CHART_DPI)
             fig_radar.patch.set_facecolor('#fff5f7')
             ax_radar = fig_radar.add_subplot(111, projection='polar')
 
