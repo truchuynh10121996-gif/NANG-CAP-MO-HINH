@@ -63,6 +63,85 @@ except Exception:
 MODEL_NAME = "gemini-2.5-flash"
 
 # =========================
+# HÀM PHÂN LOẠI PD THEO 5 CẤP ĐỘ
+# =========================
+
+def classify_pd(pd_value):
+    """
+    Phân loại PD theo 5 cấp độ với rating và màu sắc gradient.
+
+    Args:
+        pd_value: Xác suất vỡ nợ (0-1)
+
+    Returns:
+        dict: {
+            'range': 'PD Range',
+            'classification': 'Phân loại',
+            'rating': 'Rating (AAA-D)',
+            'meaning': 'Ý nghĩa',
+            'color': 'Mã màu hex',
+            'gradient_color': 'Gradient color'
+        }
+    """
+    if pd.isna(pd_value):
+        return {
+            'range': 'N/A',
+            'classification': 'Không xác định',
+            'rating': 'N/A',
+            'meaning': 'Thiếu dữ liệu',
+            'color': '#6c757d',
+            'gradient_color': 'linear-gradient(135deg, #6c757d 0%, #95a5a6 100%)'
+        }
+
+    pd_percent = pd_value * 100  # Convert to percentage
+
+    if pd_percent < 2:
+        return {
+            'range': '< 2%',
+            'classification': 'Rất thấp',
+            'rating': 'AAA-AA',
+            'meaning': 'Doanh nghiệp xuất sắc',
+            'color': '#28a745',  # Green
+            'gradient_color': 'linear-gradient(135deg, #28a745 0%, #20c997 100%)'
+        }
+    elif pd_percent < 5:
+        return {
+            'range': '2-5%',
+            'classification': 'Thấp',
+            'rating': 'A-BBB',
+            'meaning': 'Doanh nghiệp tốt',
+            'color': '#5cb85c',  # Light green
+            'gradient_color': 'linear-gradient(135deg, #5cb85c 0%, #4cae4c 100%)'
+        }
+    elif pd_percent < 10:
+        return {
+            'range': '5-10%',
+            'classification': 'Trung bình',
+            'rating': 'BB',
+            'meaning': 'Cần theo dõi',
+            'color': '#ffc107',  # Yellow/Warning
+            'gradient_color': 'linear-gradient(135deg, #ffc107 0%, #ffca2c 100%)'
+        }
+    elif pd_percent < 20:
+        return {
+            'range': '10-20%',
+            'classification': 'Cao',
+            'rating': 'B',
+            'meaning': 'Rủi ro đáng kể',
+            'color': '#fd7e14',  # Orange
+            'gradient_color': 'linear-gradient(135deg, #fd7e14 0%, #ff851b 100%)'
+        }
+    else:  # >= 20%
+        return {
+            'range': '> 20%',
+            'classification': 'Rất cao',
+            'rating': 'CCC-D',
+            'meaning': 'Nguy cơ vỡ nợ cao',
+            'color': '#dc3545',  # Red
+            'gradient_color': 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)'
+        }
+
+# =========================
 # HÀM TẠO WORD REPORT
 # =========================
 
@@ -670,64 +749,64 @@ div[data-testid="stSpinner"] > div {
     position: fixed;
     bottom: 30px;
     right: 30px;
-    z-index: 9999;
+    z-index: 99999 !important;
     cursor: pointer;
+    animation: fadeInUp 0.5s ease-in-out;
 }
 
-.scroll-to-top button {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    padding: 15px 25px;
-    border-radius: 50px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
-.scroll-to-top button:hover {
-    background: linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%);
-    box-shadow: 0 8px 30px rgba(102, 126, 234, 0.7);
-    transform: translateY(-3px) scale(1.05);
+.scroll-to-top a {
+    display: inline-block;
+    background: linear-gradient(135deg, #ff6b9d 0%, #ff85a1 100%) !important;
+    color: white !important;
+    text-decoration: none !important;
+    padding: 18px 28px !important;
+    border-radius: 50px !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    cursor: pointer !important;
+    box-shadow: 0 8px 25px rgba(255, 107, 157, 0.6),
+                0 4px 12px rgba(0, 0, 0, 0.2) !important;
+    transition: all 0.3s ease !important;
+    border: 2px solid rgba(255, 255, 255, 0.3) !important;
 }
 
-.scroll-to-top button:active {
-    transform: translateY(-1px) scale(0.98);
+.scroll-to-top a:hover {
+    background: linear-gradient(135deg, #e91e63 0%, #f06292 100%) !important;
+    box-shadow: 0 12px 35px rgba(255, 107, 157, 0.8),
+                0 6px 18px rgba(0, 0, 0, 0.3) !important;
+    transform: translateY(-5px) scale(1.08) !important;
+    border-color: rgba(255, 255, 255, 0.5) !important;
+}
+
+.scroll-to-top a:active {
+    transform: translateY(-2px) scale(1.02) !important;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
 # ========================================
-# JAVASCRIPT CHO NÚT "LÊN ĐẦU TRANG" STICKY
+# NÚT "LÊN ĐẦU TRANG" STICKY (HTML)
 # ========================================
-st.markdown("""
-<script>
-    // Tạo nút lên đầu trang sticky
-    window.addEventListener('load', function() {
-        // Tạo nút nếu chưa có
-        if (!document.getElementById('scrollToTopBtn')) {
-            var btn = document.createElement('div');
-            btn.id = 'scrollToTopBtn';
-            btn.className = 'scroll-to-top';
-            btn.innerHTML = '<button onclick="scrollToTop()">⬆️ Lên đầu trang</button>';
-            document.body.appendChild(btn);
-        }
-    });
+# Thêm anchor ở đầu trang
+st.markdown('<a id="top-of-page"></a>', unsafe_allow_html=True)
 
-    // Hàm scroll lên đầu trang
-    function scrollToTop() {
-        window.scrollTo({
-            top: 0,
-            behavior: 'smooth'
-        });
-    }
-</script>
+# Tạo nút sticky ở cuối trang
+st.markdown("""
+<div class="scroll-to-top">
+    <a href="#top-of-page">⬆️ Lên đầu trang</a>
+</div>
 """, unsafe_allow_html=True)
 
 
@@ -1415,32 +1494,68 @@ with tab_goal:
     để đạt độ chính xác cao hơn và khả năng giải thích tốt hơn so với mô hình đơn lẻ.
     """)
 
-    with st.expander("🖼️ Mô tả trực quan mô hình"):
-        st.markdown("### Các hình ảnh minh họa cho mô hình Stacking Ensemble và quy trình đánh giá rủi ro")
+    st.divider()
 
-        # Hiển thị hình ảnh trong columns để layout đẹp hơn
-        col_img1, col_img2 = st.columns(2)
+    # Mô tả về các biến đầu vào X1-X14
+    st.markdown("### 📊 Các Biến Đầu vào (X1 - X14)")
+    st.markdown("""
+    Mô hình sử dụng **14 chỉ số tài chính** được tính toán từ 3 báo cáo tài chính chính của doanh nghiệp.
+    Các chỉ số này phản ánh khả năng sinh lời, thanh khoản, cơ cấu nợ và hiệu quả hoạt động của doanh nghiệp.
+    """)
 
-        for idx, img in enumerate(["hinh2.jpg", "LogReg_1.png", "hinh3.png"]):
-            try:
-                if idx == 0:
-                    with col_img1:
-                        st.image(img, caption=f"Mô tả {idx+1}: Quy trình đánh giá", use_container_width=True)
-                elif idx == 1:
-                    with col_img2:
-                        st.image(img, caption=f"Mô tả {idx+1}: Mô hình Logistic Regression", use_container_width=True)
-                else:
-                    st.image(img, caption=f"Mô tả {idx+1}: Kết quả phân tích", use_container_width=True)
-            except Exception:
-                # Nếu không tìm thấy file, hiển thị message thân thiện
-                st.info(f"📊 Hình ảnh minh họa '{img}' sẽ được hiển thị ở đây")
+    # Tạo 4 nhóm chỉ số
+    st.markdown("#### 1. 💰 Nhóm Khả năng Sinh lời (Profitability)")
+    st.markdown("""
+    - **X1 - Biên Lợi nhuận Gộp**: Đo lường hiệu quả hoạt động kinh doanh cốt lõi
+    - **X2 - Biên Lợi nhuận Trước Thuế**: Khả năng tạo lợi nhuận từ doanh thu
+    - **X3 - ROA Trước Thuế**: Hiệu quả sử dụng tài sản để tạo lợi nhuận
+    - **X4 - ROE Trước Thuế**: Khả năng sinh lời trên vốn chủ sở hữu
+    """)
+
+    st.markdown("#### 2. 🔒 Nhóm Cơ cấu Nợ & Đòn bẩy (Leverage)")
+    st.markdown("""
+    - **X5 - Tỷ lệ Nợ/Tổng Tài sản**: Mức độ sử dụng nợ trong cơ cấu tài sản
+    - **X6 - Tỷ lệ Nợ/Vốn Chủ sở hữu**: Đo lường đòn bẩy tài chính và rủi ro vỡ nợ
+    """)
+
+    st.markdown("#### 3. 💧 Nhóm Thanh khoản (Liquidity)")
+    st.markdown("""
+    - **X7 - Thanh toán Hiện hành**: Khả năng trả nợ ngắn hạn bằng tài sản ngắn hạn
+    - **X8 - Thanh toán Nhanh**: Khả năng thanh toán nợ ngắn hạn bằng tài sản có tính thanh khoản cao
+    - **X9 - Khả năng Trả lãi**: Đo lường khả năng trả lãi vay từ lợi nhuận
+    - **X10 - Khả năng Trả nợ Gốc**: Khả năng hoàn trả gốc vay từ dòng tiền hoạt động
+    - **X11 - Tỷ lệ Tiền/Vốn Chủ sở hữu**: Lượng tiền mặt so với vốn chủ sở hữu
+    """)
+
+    st.markdown("#### 4. ⚙️ Nhóm Hiệu quả Hoạt động (Efficiency)")
+    st.markdown("""
+    - **X12 - Vòng quay Hàng tồn kho**: Tốc độ luân chuyển hàng tồn kho
+    - **X13 - Kỳ thu tiền Bình quân**: Thời gian trung bình để thu hồi công nợ
+    - **X14 - Hiệu suất Tài sản**: Khả năng tạo doanh thu từ tài sản
+    """)
+
+    st.divider()
+
+    st.markdown("### 🎯 Cách Mô hình Dự báo")
+    st.markdown("""
+    1. **Thu thập dữ liệu**: Hệ thống đọc 3 báo cáo tài chính (BCĐKT, BCKQKD, BCLCTT) từ file Excel
+    2. **Tính toán chỉ số**: Tự động tính toán 14 chỉ số tài chính (X1-X14) từ các báo cáo
+    3. **Dự báo PD**:
+       - 3 Base Models (Logistic, RandomForest, XGBoost) dự báo độc lập
+       - Meta-Model (Logistic) tổng hợp kết quả từ 3 models để đưa ra dự báo cuối cùng
+    4. **Phân loại Rating**: Dựa trên PD, hệ thống phân loại doanh nghiệp theo 5 cấp độ (AAA-AA, A-BBB, BB, B, CCC-D)
+    5. **Phân tích AI**: Gemini AI phân tích sâu các chỉ số và đưa ra khuyến nghị tín dụng
+    """)
+
+    st.info("💡 **Lưu ý**: Tất cả 14 chỉ số đều được tính toán tự động. Bạn chỉ cần tải file Excel chứa 3 báo cáo tài chính.")
+
 
 with tab_build:
     st.header("🛠️ Xây dựng & Đánh giá Mô hình Stacking Ensemble")
     st.info("**Mô hình Stacking Classifier** đã được huấn luyện với **3 Base Models** (Logistic, RandomForest, XGBoost) + **Meta-Model** (Logistic) trên **20% dữ liệu Test (chưa thấy)**.")
 
-    # Thêm expander để giải thích về Stacking Model
-    with st.expander("ℹ️ Giải thích về Mô hình Stacking"):
+    # Thêm expander để giải thích về Stacking Model với diagram
+    with st.expander("ℹ️ Giải thích về Mô hình Stacking", expanded=True):
         st.markdown("""
         **Stacking Classifier** là phương pháp ensemble learning cao cấp:
 
@@ -1456,6 +1571,56 @@ with tab_build:
 
         **Ưu điểm**: Kết hợp điểm mạnh của nhiều thuật toán, độ chính xác cao hơn, robust hơn.
         """)
+
+        st.markdown("---")
+        st.markdown("### 📊 Sơ đồ Hoạt động của Stacking Model")
+
+        # Tạo diagram minh họa bằng text/markdown
+        st.markdown("""
+        ```
+        ┌─────────────────────────────────────────────────────────────────┐
+        │                    DỮ LIỆU ĐẦU VÀO (X1-X14)                    │
+        │              14 Chỉ số Tài chính của Doanh nghiệp              │
+        └────────────────────────────┬────────────────────────────────────┘
+                                     │
+                    ┌────────────────┼────────────────┐
+                    ▼                ▼                ▼
+        ┌──────────────────┐ ┌──────────────┐ ┌──────────────┐
+        │  BASE MODEL 1    │ │ BASE MODEL 2 │ │ BASE MODEL 3 │
+        │   LOGISTIC       │ │ RANDOM FOREST│ │   XGBOOST    │
+        │   REGRESSION     │ │              │ │              │
+        └────────┬─────────┘ └──────┬───────┘ └──────┬───────┘
+                 │                  │                 │
+                 │ PD₁ = 12.5%      │ PD₂ = 15.3%    │ PD₃ = 14.1%
+                 │                  │                 │
+                 └──────────────────┼─────────────────┘
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │       META-MODEL              │
+                    │   LOGISTIC REGRESSION         │
+                    │  (Tổng hợp 3 dự báo trên)     │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  KẾT QUẢ CUỐI CÙNG: PD = 14%  │
+                    │   Rating: BB (Trung bình)     │
+                    │   Cần theo dõi                │
+                    └───────────────────────────────┘
+        ```
+        """)
+
+        st.markdown("""
+        **Quy trình hoạt động:**
+        1. **Bước 1**: Dữ liệu X1-X14 được đưa vào 3 Base Models độc lập
+        2. **Bước 2**: Mỗi Base Model đưa ra dự báo PD riêng (PD₁, PD₂, PD₃)
+        3. **Bước 3**: Meta-Model nhận 3 dự báo này làm đầu vào
+        4. **Bước 4**: Meta-Model kết hợp thông minh để đưa ra PD cuối cùng
+        5. **Bước 5**: Hệ thống phân loại Rating dựa trên PD cuối cùng
+        """)
+
+        st.success("💡 **Lợi ích**: Stacking giúp cân bằng giữa các models, giảm bias và variance, tăng độ chính xác!")
+
     
     # Hiển thị Metrics quan trọng bằng st.metric
     st.subheader("1. Tổng quan Kết quả Đánh giá (Test Set)")
@@ -1642,79 +1807,8 @@ with tab_predict:
                 st.warning(f"Không dự báo được PD: {e}")
         
         # ================================================================================================
-        # HIỂN THỊ 4 PD: 3 PD từ Base Models ở trên + 1 PD cuối cùng từ Stacking ở dưới (KẾT QUẢ CHÍNH)
+        # HIỂN THỊ 4 PD: Phần này đã được di chuyển xuống dưới phần "Giải thích về Biểu đồ"
         # ================================================================================================
-
-        st.markdown("#### 🎯 Dự báo Xác suất Vỡ nợ (PD) từ 4 Mô hình")
-
-        # Hiển thị 3 PD từ Base Models trên 1 hàng
-        st.markdown("##### 📊 Dự báo từ 3 Mô hình Cơ sở")
-        pd_col_logistic, pd_col_rf, pd_col_xgb = st.columns(3)
-
-        with pd_col_logistic:
-            pd_value_log = f"{probs_logistic:.2%}" if pd.notna(probs_logistic) else "N/A"
-            st.metric(
-                label="**PD - Logistic**",
-                value=pd_value_log,
-                delta="⬆️ Cao" if pd.notna(probs_logistic) and probs_logistic >= 0.15 else "⬇️ Thấp",
-                delta_color=("inverse" if pd.notna(probs_logistic) and probs_logistic >= 0.15 else "normal")
-            )
-
-        with pd_col_rf:
-            pd_value_rf = f"{probs_rf:.2%}" if pd.notna(probs_rf) else "N/A"
-            st.metric(
-                label="**PD - RandomForest**",
-                value=pd_value_rf,
-                delta="⬆️ Cao" if pd.notna(probs_rf) and probs_rf >= 0.15 else "⬇️ Thấp",
-                delta_color=("inverse" if pd.notna(probs_rf) and probs_rf >= 0.15 else "normal")
-            )
-
-        with pd_col_xgb:
-            pd_value_xgb = f"{probs_xgb:.2%}" if pd.notna(probs_xgb) else "N/A"
-            st.metric(
-                label="**PD - XGBoost**",
-                value=pd_value_xgb,
-                delta="⬆️ Cao" if pd.notna(probs_xgb) and probs_xgb >= 0.15 else "⬇️ Thấp",
-                delta_color=("inverse" if pd.notna(probs_xgb) and probs_xgb >= 0.15 else "normal")
-            )
-
-        # Hiển thị PD Stacking nổi bật ở dưới
-        st.markdown("##### 🏆 KẾT QUẢ DỰ BÁO CUỐI CÙNG (STACKING MODEL)")
-
-        # Tạo container nổi bật cho PD Stacking
-        stacking_container = st.container()
-        with stacking_container:
-            # Sử dụng markdown với style đặc biệt
-            pd_value_stacking = f"{probs:.2%}" if pd.notna(probs) else "N/A"
-            pd_delta = "⚠️ RỦI RO CAO" if pd.notna(preds) and preds == 1 else "✅ RỦI RO THẤP"
-            risk_color = "#dc3545" if pd.notna(preds) and preds == 1 else "#28a745"
-
-            st.markdown(f"""
-            <div style='
-                background: linear-gradient(135deg, #fff5f7 0%, #ffe8f0 100%);
-                border: 3px solid {risk_color};
-                border-radius: 15px;
-                padding: 30px;
-                text-align: center;
-                box-shadow: 0 10px 30px rgba(255, 107, 157, 0.3);
-                margin: 20px 0;
-            '>
-                <div style='font-size: 18px; font-weight: 700; color: #c2185b; margin-bottom: 15px;'>
-                    🏆 XÁC SUẤT VỠ NỢ (PD) - STACKING MODEL
-                </div>
-                <div style='font-size: 48px; font-weight: 900; color: {risk_color}; margin: 20px 0;'>
-                    {pd_value_stacking}
-                </div>
-                <div style='font-size: 20px; font-weight: 700; color: {risk_color};'>
-                    {pd_delta}
-                </div>
-                <div style='font-size: 14px; color: #7f8c8d; margin-top: 15px; font-style: italic;'>
-                    💡 AI sử dụng kết quả này để phân tích và đề xuất quyết định tín dụng
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.divider()
 
         # Hiển thị Chỉ số Tài chính
         st.markdown("#### 📊 Chi tiết Chỉ số Tài chính")
@@ -1862,6 +1956,88 @@ with tab_predict:
             - Diện tích vùng phủ thể hiện độ mạnh của các chỉ số
             - Hình dạng đều = tốt, hình dạng lệch = cần cân bằng
             """)
+
+        st.divider()
+
+        # ================================================================================================
+        # HIỂN THỊ 4 PD: 3 PD từ Base Models ở trên + 1 PD cuối cùng từ Stacking ở dưới (KẾT QUẢ CHÍNH)
+        # ================================================================================================
+
+        st.markdown("### 2. 🎯 Dự báo Xác suất Vỡ nợ (PD) từ 4 Mô hình")
+
+        # Hiển thị 3 PD từ Base Models trên 1 hàng
+        st.markdown("##### 📊 Dự báo từ 3 Mô hình Cơ sở")
+        pd_col_logistic, pd_col_rf, pd_col_xgb = st.columns(3)
+
+        with pd_col_logistic:
+            pd_value_log = f"{probs_logistic:.2%}" if pd.notna(probs_logistic) else "N/A"
+            st.metric(
+                label="**PD - Logistic**",
+                value=pd_value_log,
+                delta="⬆️ Cao" if pd.notna(probs_logistic) and probs_logistic >= 0.15 else "⬇️ Thấp",
+                delta_color=("inverse" if pd.notna(probs_logistic) and probs_logistic >= 0.15 else "normal")
+            )
+
+        with pd_col_rf:
+            pd_value_rf = f"{probs_rf:.2%}" if pd.notna(probs_rf) else "N/A"
+            st.metric(
+                label="**PD - RandomForest**",
+                value=pd_value_rf,
+                delta="⬆️ Cao" if pd.notna(probs_rf) and probs_rf >= 0.15 else "⬇️ Thấp",
+                delta_color=("inverse" if pd.notna(probs_rf) and probs_rf >= 0.15 else "normal")
+            )
+
+        with pd_col_xgb:
+            pd_value_xgb = f"{probs_xgb:.2%}" if pd.notna(probs_xgb) else "N/A"
+            st.metric(
+                label="**PD - XGBoost**",
+                value=pd_value_xgb,
+                delta="⬆️ Cao" if pd.notna(probs_xgb) and probs_xgb >= 0.15 else "⬇️ Thấp",
+                delta_color=("inverse" if pd.notna(probs_xgb) and probs_xgb >= 0.15 else "normal")
+            )
+
+        # Hiển thị PD Stacking nổi bật ở dưới
+        st.markdown("##### 🏆 KẾT QUẢ DỰ BÁO CUỐI CÙNG (STACKING MODEL)")
+
+        # Tạo container nổi bật cho PD Stacking
+        stacking_container = st.container()
+        with stacking_container:
+            # Sử dụng hàm classify_pd để lấy thông tin phân loại
+            pd_classification = classify_pd(probs)
+
+            # Sử dụng markdown với style đặc biệt
+            pd_value_stacking = f"{probs:.2%}" if pd.notna(probs) else "N/A"
+
+            st.markdown(f"""
+            <div style='
+                background: {pd_classification['gradient_color']};
+                border: 3px solid {pd_classification['color']};
+                border-radius: 15px;
+                padding: 30px;
+                text-align: center;
+                box-shadow: 0 10px 30px rgba(255, 107, 157, 0.3);
+                margin: 20px 0;
+            '>
+                <div style='font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 15px;'>
+                    🏆 XÁC SUẤT VỠ NỢ (PD) - STACKING MODEL
+                </div>
+                <div style='font-size: 48px; font-weight: 900; color: #ffffff; margin: 20px 0;'>
+                    {pd_value_stacking}
+                </div>
+                <div style='font-size: 24px; font-weight: 700; color: #ffffff; margin: 10px 0;'>
+                    Rating: {pd_classification['rating']}
+                </div>
+                <div style='font-size: 20px; font-weight: 600; color: #ffffff; background: rgba(0,0,0,0.1); padding: 10px; border-radius: 8px; margin: 10px 0;'>
+                    {pd_classification['classification']} ({pd_classification['range']})
+                </div>
+                <div style='font-size: 16px; color: #ffffff; margin-top: 10px; font-style: italic;'>
+                    📊 {pd_classification['meaning']}
+                </div>
+                <div style='font-size: 14px; color: rgba(255,255,255,0.9); margin-top: 15px; font-style: italic;'>
+                    💡 AI sử dụng kết quả này để phân tích và đề xuất quyết định tín dụng
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.divider()
 
@@ -2361,9 +2537,16 @@ with tab_dashboard:
                             """)
                             st.divider()
 
+                        # Lưu dữ liệu vào session_state để giữ biểu đồ khi click button
+                        if 'macro_analysis_result' not in st.session_state:
+                            st.session_state['macro_analysis_result'] = None
+
                         # Nút phân tích sâu
                         st.markdown("### 🔍 Phân tích Sâu bằng AI")
-                        if st.button("💡 Phân tích ảnh hưởng đến Quyết định Cho vay", use_container_width=True, type="primary"):
+                        analyze_macro_btn = st.button("💡 Phân tích ảnh hưởng đến Quyết định Cho vay",
+                                                     use_container_width=True, type="primary", key="analyze_macro")
+
+                        if analyze_macro_btn:
                             with st.spinner('AI đang phân tích...'):
                                 client = genai.Client(api_key=api_key)
                                 prompt = f"""Dựa trên dữ liệu vĩ mô sau của nền kinh tế Việt Nam:
@@ -2382,8 +2565,13 @@ Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm 
                                     contents=[{"role": "user", "parts": [{"text": prompt}]}]
                                 )
 
-                                st.markdown("#### 📊 Phân tích AI - Ảnh hưởng đến Quyết định Cho vay")
-                                st.markdown(response.text)
+                                st.session_state['macro_analysis_result'] = response.text
+
+                        # Hiển thị kết quả phân tích nếu có
+                        if st.session_state['macro_analysis_result']:
+                            st.markdown("---")
+                            st.markdown("#### 📊 Phân tích AI - Ảnh hưởng đến Quyết định Cho vay")
+                            st.success(st.session_state['macro_analysis_result'])
 
                     else:
                         st.error("⚠️ Không thể lấy dữ liệu vĩ mô từ AI.")
@@ -2515,9 +2703,16 @@ Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm 
                             """)
                             st.divider()
 
+                        # Lưu dữ liệu vào session_state để giữ biểu đồ khi click button
+                        if 'industry_analysis_result' not in st.session_state:
+                            st.session_state['industry_analysis_result'] = None
+
                         # Nút phân tích sâu
                         st.markdown("### 🔍 Phân tích Sâu bằng AI")
-                        if st.button("💡 Phân tích ảnh hưởng đến Quyết định Cho vay", use_container_width=True, type="primary"):
+                        analyze_industry_btn = st.button("💡 Phân tích ảnh hưởng đến Quyết định Cho vay",
+                                                        use_container_width=True, type="primary", key="analyze_industry")
+
+                        if analyze_industry_btn:
                             with st.spinner('AI đang phân tích...'):
                                 client = genai.Client(api_key=api_key)
                                 prompt = f"""Dựa trên dữ liệu ngành {selected_analysis} sau:
@@ -2537,8 +2732,13 @@ Trả lời bằng tiếng Việt, có cấu trúc rõ ràng với các điểm 
                                     contents=[{"role": "user", "parts": [{"text": prompt}]}]
                                 )
 
-                                st.markdown("#### 📊 Phân tích AI - Quyết định Cho vay")
-                                st.markdown(response.text)
+                                st.session_state['industry_analysis_result'] = response.text
+
+                        # Hiển thị kết quả phân tích nếu có
+                        if st.session_state['industry_analysis_result']:
+                            st.markdown("---")
+                            st.markdown("#### 📊 Phân tích AI - Quyết định Cho vay")
+                            st.success(st.session_state['industry_analysis_result'])
 
                     else:
                         st.error(f"⚠️ Không thể lấy dữ liệu ngành {selected_analysis} từ AI.")
